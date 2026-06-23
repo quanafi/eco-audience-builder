@@ -32,17 +32,6 @@ def get_facets() -> dict:
         )
         segments[key] = [{"value": r["v"], "count": int(r["n"])} for r in rows]
 
-    # All job tags (one row per customer's distinct tag across their jobs). 605-ish
-    # values, so this is browsed via a searchable/scrollable list in the UI, not chips.
-    # Sorted by reach desc so the most common tags surface first.
-    tag_rows = run_query(
-        """select trim(t) as tag, count(distinct customer_id) as n
-            from edw2.jobs
-            cross join unnest(string_to_array(tags, ',')) as t
-            where tags is not null and tags <> '' and trim(t) <> ''
-            group by 1 order by 2 desc, 1"""
-    )
-
     trade_counts = run_query(
         "select "
         + ", ".join(f"count(*) filter (where {c} = 1) as \"{name}\"" for name, c in TRADES.items())
@@ -65,5 +54,23 @@ def get_facets() -> dict:
         "regions": [{"value": n, "count": int(region_counts[n] or 0)} for n in REGIONS],
         "segments": segments,
         "flags": {n: int(flag_counts[n] or 0) for n in FLAGS},
-        "tags": [{"value": r["tag"], "count": int(r["n"])} for r in tag_rows],
     }
+
+
+@lru_cache(maxsize=1)
+def get_tag_facets() -> list[dict]:
+    """The job-tag universe: every tag with its distinct-customer reach, reach desc.
+
+    Kept separate from get_facets() because the distinct-customer count over the
+    unnested job tags is ~5s — far slower than the other facets. The UI loads it
+    asynchronously (and the server warms it at startup) so it never blocks page load.
+    605-ish values, browsed via a searchable/scrollable list rather than chips.
+    """
+    rows = run_query(
+        """select trim(t) as tag, count(distinct customer_id) as n
+            from edw2.jobs
+            cross join unnest(string_to_array(tags, ',')) as t
+            where tags is not null and tags <> '' and trim(t) <> ''
+            group by 1 order by 2 desc, 1"""
+    )
+    return [{"value": r["tag"], "count": int(r["n"])} for r in rows]

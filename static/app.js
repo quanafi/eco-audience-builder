@@ -52,6 +52,7 @@ const EXPORT_COLUMNS = [
     { key: 'lifetime_revenue', label: 'Lifetime revenue', def: true },
     { key: 'last_completed_job', label: 'Last job date', def: true },
     { key: 'days_since_last_job', label: 'Days since last job', def: false },
+    { key: 'job_tags', label: 'Job tags', def: false },
   ] },
   { group: 'Segments', cols: [
     { key: 'lifetime_revenue_segment', label: 'Revenue segment', def: false },
@@ -94,6 +95,7 @@ const state = {
   mode: 'include',                                   // which filter set the UI is editing
   sets: { include: emptySet(), exclude: emptySet() },
   tagSearch: '',                                     // transient: filters the (long) tag list
+  tagsLoaded: false,                                 // tag universe loads async (slow query)
   tab: 'preview', sql: '',
 };
 
@@ -174,13 +176,42 @@ function buildFilters() {
   segHtml += `</div>`;
   html.push(segHtml);
 
+  // Job tags — a searchable, scrollable list (600+ tags, many operational), so you
+  // can browse to find one when you can't recall the exact name. Selected tags show
+  // as removable chips; counts are each tag's total customer reach.
+  const q = state.tagSearch.trim().toLowerCase();
+  const tagOpts = f.tags || [];
+  const selChips = s.tags.length
+    ? `<div class="tag-sel">` +
+      s.tags.map((t) => `<button type="button" class="chip on" data-tag="${esc(t)}">${esc(t)}<span class="chip-x">×</span></button>`).join('') +
+      `</div>`
+    : '';
+  const listRows = tagOpts.map((o) => {
+    const on = s.tags.includes(o.value);
+    const hide = q && !o.value.toLowerCase().includes(q);
+    return `<button type="button" class="tag-opt${on ? ' on' : ''}" data-tag="${esc(o.value)}"${hide ? ' hidden' : ''}>` +
+      `<span class="tag-opt-lbl">${esc(o.value)}</span><span class="cnt">${fmtInt(cnt('tags', o.value, o.count))}</span></button>`;
+  }).join('');
+  const tagPlaceholder = state.tagsLoaded ? `Search ${fmtInt(tagOpts.length)} tags…` : 'Loading tags…';
+  const tagListInner = !state.tagsLoaded
+    ? '<div class="hint">Loading tags…</div>'
+    : (listRows || '<div class="hint">No tags match.</div>');
+  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.tag)}Job tags</div>` +
+    selChips +
+    `<input class="fin tag-search" type="text" id="tagSearch" autocomplete="off" placeholder="${tagPlaceholder}" value="${esc(state.tagSearch)}"${state.tagsLoaded ? '' : ' disabled'}>` +
+    `<div class="tag-list" id="tagList">${tagListInner}</div></div>`);
+
   // Reachability
   html.push(`<div class="fsection" style="margin-bottom:6px"><div class="fhead">${icon(ICONS.check, true)}Reachability</div>` +
     `<div class="chips" data-group="flags">` +
     FLAGS.map((x) => chip(x.label, s.flags.includes(x.f), cnt('flags', x.f, undefined))).join('') + `</div></div>`);
 
+  const tl = $('tagList');
+  if (tl) _tagScroll = tl.scrollTop;          // remember scroll across the rebuild
   $('filters').innerHTML = html.join('');
   wireFilters(f);
+  const tl2 = $('tagList');
+  if (tl2) tl2.scrollTop = _tagScroll;
   updateBadges();
 }
 
@@ -218,6 +249,24 @@ function wireFilters(f) {
   bindNum('spendMin', 'spendMin', () => { cur().spendPreset = null; });
   bindNum('spendMax', 'spendMax', () => { cur().spendPreset = null; });
   bindText('zip', 'zips');
+
+  // Job tags: search filters the list in place (no rebuild, keeps focus); clicking an
+  // option or a selected chip toggles it and re-queries.
+  const ts = $('tagSearch');
+  if (ts) ts.addEventListener('input', () => { state.tagSearch = ts.value; filterTagList(); });
+  document.querySelectorAll('#tagList .tag-opt').forEach((b) => {
+    b.addEventListener('click', () => { toggle(cur().tags, b.dataset.tag); buildFilters(); refresh(); });
+  });
+  document.querySelectorAll('.tag-sel .chip').forEach((b) => {
+    b.addEventListener('click', () => { toggle(cur().tags, b.dataset.tag); buildFilters(); refresh(); });
+  });
+}
+
+function filterTagList() {
+  const q = state.tagSearch.trim().toLowerCase();
+  document.querySelectorAll('#tagList .tag-opt').forEach((b) => {
+    b.hidden = q && !b.dataset.tag.toLowerCase().includes(q);
+  });
 }
 
 function bindNum(id, key, after) {
@@ -235,7 +284,7 @@ function bindText(id, key) {
 
 function setActiveCount(s) {
   const zl = s.zips.split(/[\s,]+/).map((z) => z.trim()).filter((z) => /^\d{5}$/.test(z));
-  return s.trades.length + s.regions.length + s.flags.length +
+  return s.trades.length + s.regions.length + s.flags.length + s.tags.length +
     s.revenueSegments.length + s.frequencySegments.length + s.recencySegments.length +
     (s.recency !== 'any' ? 1 : 0) + (zl.length ? 1 : 0) +
     ((s.spendMin != null || s.spendMax != null) ? 1 : 0);
@@ -471,6 +520,18 @@ async function init() {
     $('baseCount').textContent = fmtInt(f.baseCount) + ' customers';
     buildFilters();
     runQuery();
+
+    // Job tags load separately — the reach query is ~5s, so we don't block the page
+    // on it. The tag section shows "Loading tags…" until this resolves.
+    fetch('/api/tags')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || d.error || !d.tags) return;
+        state.facets.tags = d.tags;
+        state.tagsLoaded = true;
+        buildFilters();
+      })
+      .catch(() => {});
   } catch (e) {
     showError('Could not load facets: ' + e);
   }

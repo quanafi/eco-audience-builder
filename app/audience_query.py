@@ -85,9 +85,9 @@ def _clean_zips(raw) -> list[str]:
 
 def _valid_tags() -> set[str]:
     """The known job-tag vocabulary, used to reject anything not actually in the data."""
-    from .facets import get_facets  # lazy: facets imports from this module
+    from .facets import get_tag_facets  # lazy: facets imports from this module
 
-    return {o["value"] for o in get_facets().get("tags", [])}
+    return {o["value"] for o in get_tag_facets()}
 
 
 def _clean_tags(raw) -> list[str]:
@@ -144,15 +144,17 @@ def _filter_clauses(payload: dict, prefix: str = "") -> tuple[list[str], dict]:
             where.append(FLAGS[flag])
 
     # Job tags: keep customers who have *any* selected tag on *any* of their jobs.
-    # Semi-join against edw2.jobs (tags is a comma-separated, sometimes space-padded
-    # list per job). The `is not null` guard keeps NOT IN well-behaved for excludes.
+    # Correlated EXISTS against edw2.jobs (tags is a comma-separated, sometimes
+    # space-padded list per job). EXISTS lets Postgres use the customer_id index and
+    # plan a hash (anti-)join, so both include and exclude (not exists) stay well
+    # under the warehouse statement timeout — a NOT IN (subquery) anti-join does not.
     tags = _clean_tags(payload.get("tags"))
     if tags:
         pname = f"{prefix}tags"
         where.append(
-            f"customer_id in (select j.customer_id from {JOBS_TABLE} j "
+            f"exists (select 1 from {JOBS_TABLE} j "
             f"cross join unnest(string_to_array(j.tags, ',')) as tg "
-            f"where j.customer_id is not null and trim(tg) = any(:{pname}))"
+            f"where j.customer_id = {TABLE}.customer_id and trim(tg) = any(:{pname}))"
         )
         params[pname] = tags
 
@@ -263,10 +265,9 @@ def facet_counts(payload: dict) -> dict:
         for alias, gkey, value in alias_map:
             out.setdefault(gkey, {})[value] = int(row[alias] or 0)
 
-    # Tags (605+ options) are served as static global reach counts rather than
-    # recomputed per selection — recomputing all of them on every query would be
-    # too expensive. The UI uses these as a stable reach hint in the tag list.
-    out["tags"] = {o["value"]: o["count"] for o in gf.get("tags", [])}
+    # Tags are intentionally absent here: 605+ options are too many to recompute per
+    # selection, and the UI shows each tag's static global reach (from /api/tags) as a
+    # stable hint instead. Keeping them out also keeps this query off the slow path.
     return out
 
 
@@ -382,9 +383,9 @@ def _literal_clauses(payload: dict) -> list[str]:
     if tags:
         vals = ", ".join(_sql_str(t) for t in tags)
         where.append(
-            f"customer_id in (select j.customer_id from {JOBS_TABLE} j "
+            f"exists (select 1 from {JOBS_TABLE} j "
             f"cross join unnest(string_to_array(j.tags, ',')) as tg "
-            f"where j.customer_id is not null and trim(tg) in ({vals}))"
+            f"where j.customer_id = {TABLE}.customer_id and trim(tg) in ({vals}))"
         )
 
     return where

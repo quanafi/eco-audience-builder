@@ -57,6 +57,22 @@ body{margin:0;background:var(--paper);color:var(--navy);
 .chip .cnt{font-size:10.5px;opacity:.62;font-weight:700}
 .chip.on .cnt{opacity:.7}
 
+/* job tags: removable selected chips + searchable scrollable list */
+.tag-sel{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.tag-sel .chip{padding-right:9px}
+.chip-x{font-size:13px;line-height:1;opacity:.65;margin-left:1px}
+.tag-sel .chip:hover .chip-x{opacity:1}
+input.fin.tag-search{margin-bottom:8px}
+.tag-list{max-height:212px;overflow:auto;border:1px solid var(--line2);border-radius:10px;padding:5px}
+.tag-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;
+  font-size:12.5px;font-weight:600;color:var(--g700);padding:7px 9px;border:none;border-radius:7px;background:none;
+  cursor:pointer;font-family:inherit;transition:background .1s}
+.tag-opt:hover{background:var(--paper)}
+.tag-opt.on{background:var(--navy);color:#fff}
+.tag-opt-lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag-opt .cnt{font-size:10.5px;font-weight:700;color:var(--g500);flex:none}
+.tag-opt.on .cnt{color:rgba(255,255,255,.72)}
+
 .segs{display:flex;flex-wrap:wrap;gap:6px}
 .seg{flex:1 1 auto;min-width:62px;font-size:12px;font-weight:600;padding:8px 6px;border-radius:10px;
   border:1px solid var(--line2);background:#fff;color:var(--g700);cursor:pointer;transition:all .12s;font-family:inherit}
