@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from .audience_query import REGIONS, TRADES
+from .audience_query import FLAGS, REGIONS, TRADES
 from .db import run_query
 
 # Segment columns whose distinct (non-null) values become filter chips.
@@ -32,6 +32,17 @@ def get_facets() -> dict:
         )
         segments[key] = [{"value": r["v"], "count": int(r["n"])} for r in rows]
 
+    # All job tags (one row per customer's distinct tag across their jobs). 605-ish
+    # values, so this is browsed via a searchable/scrollable list in the UI, not chips.
+    # Sorted by reach desc so the most common tags surface first.
+    tag_rows = run_query(
+        """select trim(t) as tag, count(distinct customer_id) as n
+            from edw2.jobs
+            cross join unnest(string_to_array(tags, ',')) as t
+            where tags is not null and tags <> '' and trim(t) <> ''
+            group by 1 order by 2 desc, 1"""
+    )
+
     trade_counts = run_query(
         "select "
         + ", ".join(f"count(*) filter (where {c} = 1) as \"{name}\"" for name, c in TRADES.items())
@@ -42,10 +53,17 @@ def get_facets() -> dict:
         + ", ".join(f"count(*) filter (where {c} = 1) as \"{name}\"" for name, c in REGIONS.items())
         + " from edw2.customers"
     )[0]
+    flag_counts = run_query(
+        "select "
+        + ", ".join(f"count(*) filter (where {expr}) as \"{name}\"" for name, expr in FLAGS.items())
+        + " from edw2.customers"
+    )[0]
 
     return {
         "baseCount": int(base or 0),
         "trades": [{"value": n, "count": int(trade_counts[n] or 0)} for n in TRADES],
         "regions": [{"value": n, "count": int(region_counts[n] or 0)} for n in REGIONS],
         "segments": segments,
+        "flags": {n: int(flag_counts[n] or 0) for n in FLAGS},
+        "tags": [{"value": r["tag"], "count": int(r["n"])} for r in tag_rows],
     }

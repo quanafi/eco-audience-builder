@@ -6,6 +6,7 @@ not a SELECT/WITH. The warehouse connection string comes from DATABASE_URL.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text
@@ -36,3 +37,17 @@ def run_query(sql: str, params: dict | None = None) -> list[dict]:
     with get_engine().connect() as conn:
         result = conn.execute(text(sql), params or {})
         return [dict(row._mapping) for row in result]
+
+
+def stream_query(sql: str, params: dict | None = None) -> Iterator[dict]:
+    """Yield rows one at a time without materializing the whole result set.
+
+    For large exports (the full audience can be tens of thousands of rows). Uses
+    a server-side cursor (stream_results) so memory stays bounded. Subject to the
+    same SELECT/WITH-only guard as run_query.
+    """
+    _assert_read_only(sql)
+    with get_engine().connect() as conn:
+        result = conn.execution_options(stream_results=True).execute(text(sql), params or {})
+        for row in result:
+            yield dict(row._mapping)

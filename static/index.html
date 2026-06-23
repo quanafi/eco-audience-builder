@@ -32,6 +32,11 @@
           <h2>Build Segment</h2>
           <span id="activeBadge" class="active-badge" hidden></span>
         </div>
+        <div class="mode-toggle" id="modeToggle">
+          <button type="button" class="mode-btn mode-on" data-mode="include">Include<span class="mode-cnt" id="cntInclude" hidden></span></button>
+          <button type="button" class="mode-btn" data-mode="exclude">Exclude<span class="mode-cnt" id="cntExclude" hidden></span></button>
+        </div>
+        <div class="mode-hint" id="modeHint">Customers must match these filters.</div>
         <div class="filters-body" id="filters">
           <!-- sections injected by app.js -->
         </div>
@@ -69,6 +74,30 @@
           <div class="tabs">
             <button type="button" class="tab tab-on" id="tabPreview">Audience preview</button>
             <button type="button" class="tab" id="tabSql">Generated SQL</button>
+            <div class="export-wrap">
+              <button type="button" class="btn-export" id="exportBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export
+              </button>
+              <div class="export-panel" id="exportPanel" hidden>
+                <div class="export-head">Export audience</div>
+                <div class="export-row">
+                  <span class="export-lbl">Format</span>
+                  <div class="export-fmt">
+                    <label><input type="radio" name="expfmt" value="csv" checked> CSV</label>
+                    <label><input type="radio" name="expfmt" value="xlsx"> Excel</label>
+                  </div>
+                </div>
+                <div class="export-row export-row-cols">
+                  <span class="export-lbl">Columns</span>
+                  <div class="export-cols" id="exportCols"></div>
+                </div>
+                <div class="export-foot">
+                  <span class="export-note" id="exportNote"></span>
+                  <button type="button" class="btn-download" id="exportDownload">Download</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div id="previewPane">
