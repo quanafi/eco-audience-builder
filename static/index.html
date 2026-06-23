@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audience Builder — eco</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Work+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-brand">
+      <img src="/static/eco-logo.png" alt="eco">
+      <div class="hdr-div"></div>
+      <div>
+        <div class="hdr-title">Audience Builder</div>
+        <div class="hdr-sub">Marketing Segmentation</div>
+      </div>
+    </div>
+    <div class="ro-pill"><span class="ro-dot"></span>Live · read-only</div>
+  </header>
+  <div class="brandbar"></div>
+
+  <div class="wrap">
+    <div class="layout">
+
+      <!-- ============ FILTERS ============ -->
+      <aside class="panel filters">
+        <div class="filters-head">
+          <h2>Build Segment</h2>
+          <span id="activeBadge" class="active-badge" hidden></span>
+        </div>
+        <div class="filters-body" id="filters">
+          <!-- sections injected by app.js -->
+        </div>
+        <div class="filters-foot">
+          <button type="button" id="clearAll" class="btn-clear">Clear all filters</button>
+        </div>
+      </aside>
+
+      <!-- ============ RESULTS ============ -->
+      <section class="results">
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-num" id="statAudience">—</div>
+            <div class="stat-lbl"><span class="dot dot-navy"></span>In audience</div>
+            <div class="stat-bar" id="barAudience"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" id="statPct">—</div>
+            <div class="stat-lbl"><span class="dot dot-lime"></span>of customer base</div>
+            <div class="stat-bar" id="barPct"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" id="statReach">—</div>
+            <div class="stat-lbl"><span class="dot dot-cyan"></span>Reachable · email/SMS</div>
+            <div class="stat-bar" id="barReach"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" id="statAvg">—</div>
+            <div class="stat-lbl"><span class="dot dot-green"></span>Avg lifetime value</div>
+            <div class="stat-bar" id="barAvg"></div>
+          </div>
+        </div>
+
+        <div class="panel card">
+          <div class="tabs">
+            <button type="button" class="tab tab-on" id="tabPreview">Audience preview</button>
+            <button type="button" class="tab" id="tabSql">Generated SQL</button>
+          </div>
+
+          <div id="previewPane">
+            <div class="caption" id="caption"><span class="dot dot-lime"></span><span id="captionText">Loading…</span></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Customer</th>
+                  <th>Location</th>
+                  <th>Primary trade</th>
+                  <th class="num">Jobs</th>
+                  <th class="num">Lifetime $</th>
+                  <th class="num">Last job</th>
+                  <th>Flags</th>
+                </tr></thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+            <div id="empty" class="empty" hidden>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#B3BBC4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <div class="empty-title">No customers match these filters.</div>
+              <div class="empty-sub">Try widening the recency window or spend range.</div>
+            </div>
+          </div>
+
+          <div id="sqlPane" hidden>
+            <div class="sql-bar">
+              <span class="sql-tag">SELECT-only · no writes</span>
+              <button type="button" id="copySql" class="btn-copy">Copy SQL</button>
+            </div>
+            <pre class="sql"><code id="sqlCode"></code></pre>
+          </div>
+        </div>
+
+        <footer class="foot">
+          Live segment over <strong id="baseCount">all customers</strong> in <code>edw2.customers</code> · ServiceTitan-derived customer mart.<br>
+          Generated SQL is <code>SELECT</code>-only and safe to paste into Hex.
+        </footer>
+      </section>
+
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

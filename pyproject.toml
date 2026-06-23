@@ -1,0 +1,15 @@
+[project]
+name = "eco-audience-builder"
+version = "0.1.0"
+description = "Marketing audience builder over the Eco Plumbers customer warehouse (read-only)."
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "python-dotenv>=1.0",
+    "gunicorn>=22.0",
+]
+
+[tool.uv]
+package = false
