@@ -94,14 +94,61 @@ def _clean_tags(raw) -> list[str]:
     return [t for t in _as_list(raw) if t in _valid_tags()]
 
 
-def _filter_clauses(payload: dict, prefix: str = "") -> tuple[list[str], dict]:
-    """Return (clauses, params) for a single filter set.
+def _sql_lit(v) -> str:
+    """Render a validated value as an inline SQL literal for the display query."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return f"{v:g}"
+    return "'" + str(v).replace("'", "''") + "'"
 
-    `prefix` namespaces the bind-param names so the same builder can run twice
-    (once for include, once for exclude) without param collisions.
+
+class _BindRenderer:
+    """Emit filter values as named bind parameters — the form executed by run_query.
+
+    One instance is shared across the include and exclude sets, so its monotonic
+    counter guarantees param names never collide between them.
+    """
+
+    def __init__(self):
+        self.params: dict = {}
+        self._n = 0
+
+    def _bind(self, value) -> str:
+        self._n += 1
+        name = f"p{self._n}"
+        self.params[name] = value
+        return name
+
+    def compare(self, expr: str, op: str, value) -> str:
+        return f"{expr} {op} :{self._bind(value)}"
+
+    def membership(self, expr: str, values: list) -> str:
+        return f"{expr} = any(:{self._bind(values)})"
+
+
+class _LiteralRenderer:
+    """Emit filter values as inlined, validated SQL literals — the copy-paste display
+    query. Every value reaching it is allow-listed or coerced to a number / 5-digit
+    ZIP, and strings are quote-escaped, so the rendered SQL is safe to paste."""
+
+    def compare(self, expr: str, op: str, value) -> str:
+        return f"{expr} {op} {_sql_lit(value)}"
+
+    def membership(self, expr: str, values: list) -> str:
+        return f"{expr} in ({', '.join(_sql_lit(v) for v in values)})"
+
+
+def _filter_clauses(payload: dict, render) -> list[str]:
+    """Return WHERE clauses for a single filter set, using `render` to emit values.
+
+    `render` is a value-rendering strategy: _BindRenderer for the executed query,
+    _LiteralRenderer for the display SQL. A single clause builder means the
+    parameterized query and the displayed SQL can never drift apart.
     """
     where: list[str] = []
-    params: dict = {}
 
     trades = [t for t in _as_list(payload.get("trades")) if t in TRADES]
     if trades:
@@ -113,31 +160,24 @@ def _filter_clauses(payload: dict, prefix: str = "") -> tuple[list[str], dict]:
 
     rmin, rmax = _num(payload.get("recencyMin")), _num(payload.get("recencyMax"))
     if rmin is not None:
-        where.append(f"days_since_last_job >= :{prefix}rmin")
-        params[f"{prefix}rmin"] = int(rmin)
+        where.append(render.compare("days_since_last_job", ">=", int(rmin)))
     if rmax is not None:
-        where.append(f"days_since_last_job <= :{prefix}rmax")
-        params[f"{prefix}rmax"] = int(rmax)
+        where.append(render.compare("days_since_last_job", "<=", int(rmax)))
 
     zips = _clean_zips(payload.get("zips"))
     if zips:
-        where.append(f"{ZIP_EXPR} = any(:{prefix}zips)")
-        params[f"{prefix}zips"] = zips
+        where.append(render.membership(ZIP_EXPR, zips))
 
     smin, smax = _num(payload.get("spendMin")), _num(payload.get("spendMax"))
     if smin is not None:
-        where.append(f"lifetime_revenue >= :{prefix}smin")
-        params[f"{prefix}smin"] = smin
+        where.append(render.compare("lifetime_revenue", ">=", smin))
     if smax is not None:
-        where.append(f"lifetime_revenue <= :{prefix}smax")
-        params[f"{prefix}smax"] = smax
+        where.append(render.compare("lifetime_revenue", "<=", smax))
 
     for key, col in SEGMENT_COLUMNS.items():
         vals = _as_list(payload.get(key))
         if vals:
-            pname = f"{prefix}{key}"
-            where.append(f"{col} = any(:{pname})")
-            params[pname] = [str(v) for v in vals]
+            where.append(render.membership(col, [str(v) for v in vals]))
 
     for flag in _as_list(payload.get("flags")):
         if flag in FLAGS:
@@ -150,30 +190,32 @@ def _filter_clauses(payload: dict, prefix: str = "") -> tuple[list[str], dict]:
     # under the warehouse statement timeout — a NOT IN (subquery) anti-join does not.
     tags = _clean_tags(payload.get("tags"))
     if tags:
-        pname = f"{prefix}tags"
+        membership = render.membership("trim(tg)", tags)
         where.append(
             f"exists (select 1 from {JOBS_TABLE} j "
             f"cross join unnest(string_to_array(j.tags, ',')) as tg "
-            f"where j.customer_id = {TABLE}.customer_id and trim(tg) = any(:{pname}))"
+            f"where j.customer_id = {TABLE}.customer_id and {membership})"
         )
-        params[pname] = tags
 
-    return where, params
+    return where
+
+
+def _all_clauses(payload: dict, render) -> list[str]:
+    """Include clauses AND-ed with each exclude clause negated.
+
+    Include clauses are AND-ed. Each exclude clause is negated and AND-ed, so a
+    customer is dropped if they match *any* exclude criterion. Both sets share the
+    one `render` instance (param names stay unique across them).
+    """
+    where = _filter_clauses(payload, render)
+    where.extend(f"not ({clause})" for clause in _filter_clauses(payload.get("exclude") or {}, render))
+    return where
 
 
 def build_filters(payload: dict) -> tuple[list[str], dict]:
-    """Return (where_clauses, bind_params) for the include + exclude filter sets.
-
-    Include clauses are AND-ed. Each exclude clause is negated and AND-ed, so a
-    customer is dropped if they match *any* exclude criterion.
-    """
-    where, params = _filter_clauses(payload)
-
-    ex_where, ex_params = _filter_clauses(payload.get("exclude") or {}, prefix="x_")
-    where.extend(f"not ({clause})" for clause in ex_where)
-    params.update(ex_params)
-
-    return where, params
+    """Return (where_clauses, bind_params) for the include + exclude filter sets."""
+    render = _BindRenderer()
+    return _all_clauses(payload, render), render.params
 
 
 def _where_sql(where: list[str]) -> str:
@@ -344,64 +386,15 @@ def _present_row(r: dict) -> dict:
     }
 
 
-def _sql_str(s: str) -> str:
-    return "'" + str(s).replace("'", "''") + "'"
-
-
-def _literal_clauses(payload: dict) -> list[str]:
-    """Build WHERE clauses for one filter set with literal (validated) values inlined."""
-    where: list[str] = []
-
-    trades = [t for t in _as_list(payload.get("trades")) if t in TRADES]
-    if trades:
-        where.append("(" + " or ".join(f"{TRADES[t]} = 1" for t in trades) + ")")
-    regions = [r for r in _as_list(payload.get("regions")) if r in REGIONS]
-    if regions:
-        where.append("(" + " or ".join(f"{REGIONS[r]} = 1" for r in regions) + ")")
-    rmin, rmax = _num(payload.get("recencyMin")), _num(payload.get("recencyMax"))
-    if rmin is not None:
-        where.append(f"days_since_last_job >= {int(rmin)}")
-    if rmax is not None:
-        where.append(f"days_since_last_job <= {int(rmax)}")
-    zips = _clean_zips(payload.get("zips"))
-    if zips:
-        where.append(f"{ZIP_EXPR} in ({', '.join(_sql_str(z) for z in zips)})")
-    smin, smax = _num(payload.get("spendMin")), _num(payload.get("spendMax"))
-    if smin is not None:
-        where.append(f"lifetime_revenue >= {smin:g}")
-    if smax is not None:
-        where.append(f"lifetime_revenue <= {smax:g}")
-    for key, col in SEGMENT_COLUMNS.items():
-        vals = _as_list(payload.get(key))
-        if vals:
-            where.append(f"{col} in ({', '.join(_sql_str(v) for v in vals)})")
-    for flag in _as_list(payload.get("flags")):
-        if flag in FLAGS:
-            where.append(FLAGS[flag])
-
-    tags = _clean_tags(payload.get("tags"))
-    if tags:
-        vals = ", ".join(_sql_str(t) for t in tags)
-        where.append(
-            f"exists (select 1 from {JOBS_TABLE} j "
-            f"cross join unnest(string_to_array(j.tags, ',')) as tg "
-            f"where j.customer_id = {TABLE}.customer_id and trim(tg) in ({vals}))"
-        )
-
-    return where
-
-
 def build_display_sql(payload: dict) -> str:
     """Render a copy-pasteable SELECT with literal (validated) values inlined.
 
-    For display only — run_audience executes the parameterized form. Every value
-    inlined here is drawn from an allow-list or coerced to a number / 5-digit ZIP,
-    so it is safe to paste into Hex.
+    For display only — run_audience executes the parameterized form (build_filters).
+    Both share _all_clauses, so the displayed SQL always matches what actually ran;
+    only the value rendering differs.
     """
-    where = _literal_clauses(payload)
-    where.extend(f"not ({clause})" for clause in _literal_clauses(payload.get("exclude") or {}))
-
-    where_sql = ("\nwhere " + "\n  and ".join(where)) if where else ""
+    where = _all_clauses(payload, _LiteralRenderer())
+    where_sql = _where_sql(where)
     return f"""-- Audience Builder · read-only segment query
 -- source mart: {TABLE}  (one row per customer_id, ServiceTitan-derived)
 select
