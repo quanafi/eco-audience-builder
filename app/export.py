@@ -98,7 +98,12 @@ def _format(kind: str, value):
 
 
 def _build_query(columns: list[str], filters: dict) -> tuple[str, dict]:
-    where, params = build_filters(filters or {})
+    # Gate "do not contact" suppressions on the columns the live mart actually has,
+    # using the same in-memory snapshot the rest of the app reads.
+    from . import snapshot
+
+    available = snapshot.get_snapshot().available_suppress
+    where, params = build_filters(filters or {}, available)
     where_sql = _where_sql(where)
     select_list = ",\n    ".join(f"{COLUMN_CATALOG[c][1]} as {c}" for c in columns)
     sql = (

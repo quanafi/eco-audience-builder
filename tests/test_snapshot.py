@@ -22,6 +22,7 @@ _DEFAULTS = {
     "days_since_last_job": None, "lifetime_revenue": None, "address": None,
     "lifetime_revenue_segment": None, "frequency_segment": None,
     "paid_recency_segment": None, "has_email": False, "has_mobile": False,
+    "do_not_mail": False, "do_not_service": False, "do_not_text": False,
 }
 
 
@@ -152,6 +153,58 @@ def test_include_and_exclude_combined():
     snap = build()
     # Plumbing include {1,4}, exclude tag VIP {1,4} -> empty
     assert ids(snap, snap.match_mask({"trades": ["Plumbing"], "exclude": {"tags": ["VIP"]}})) == []
+
+
+# --- do-not-contact suppressions -------------------------------------------
+
+def _suppress_snap():
+    rows = [
+        row(1),                       # contactable on every channel
+        row(2, do_not_mail=True),     # opted out of mail
+        row(3, do_not_text=True),     # opted out of text
+        row(4, do_not_service=True),  # do-not-service
+    ]
+    return Snapshot.from_rows(rows)
+
+
+def test_suppress_do_not_mail_drops_flagged():
+    snap = _suppress_snap()
+    assert ids(snap, snap.match_mask({"suppress": ["do_not_mail"]})) == [1, 3, 4]
+
+
+def test_suppress_do_not_text_drops_flagged():
+    snap = _suppress_snap()
+    assert ids(snap, snap.match_mask({"suppress": ["do_not_text"]})) == [1, 2, 4]
+
+
+def test_suppress_do_not_service_drops_flagged():
+    snap = _suppress_snap()
+    assert ids(snap, snap.match_mask({"suppress": ["do_not_service"]})) == [1, 2, 3]
+
+
+def test_suppress_multiple_channels_drops_any_flagged():
+    snap = _suppress_snap()
+    payload = {"suppress": ["do_not_mail", "do_not_text", "do_not_service"]}
+    assert ids(snap, snap.match_mask(payload)) == [1]
+
+
+def test_suppress_unknown_key_is_ignored():
+    snap = _suppress_snap()
+    assert ids(snap, snap.match_mask({"suppress": ["do_not_fax"]})) == [1, 2, 3, 4]
+
+
+def test_suppress_combines_with_filters_and_exclude():
+    snap = _suppress_snap()
+    # Everyone except row 1 via exclude, then suppress mail — leaves nobody/somebody
+    # consistently with AND semantics. Include all, suppress mail -> drop row 2.
+    assert ids(snap, snap.match_mask({"suppress": ["do_not_mail"], "exclude": {}})) == [1, 3, 4]
+
+
+def test_base_facets_report_suppress_counts_and_availability():
+    snap = _suppress_snap()
+    bf = snap.base_facets()
+    assert bf["suppress"] == {"do_not_mail": 1, "do_not_text": 1, "do_not_service": 1}
+    assert bf["suppressAvailable"] == ["do_not_mail", "do_not_service", "do_not_text"]
 
 
 # --- stats -----------------------------------------------------------------

@@ -193,6 +193,39 @@ def test_exclude_negated_in_display_sql():
     assert "not ((hvac_customer = 1))" in sql
 
 
+# --- do-not-contact suppressions -------------------------------------------
+
+def test_suppress_negates_known_predicates():
+    where, params = aq.build_filters({"suppress": ["do_not_mail", "do_not_text"]})
+    assert "not (do_not_mail is true)" in where
+    assert "not ((do_not_text_numbers is not null and do_not_text_numbers <> ''))" in where
+    assert params == {}  # suppressions are constant SQL, no binds
+
+
+def test_suppress_keeps_canonical_order_and_drops_unknown():
+    where, _ = aq.build_filters({"suppress": ["do_not_service", "do_not_fax", "do_not_mail"]})
+    assert where == ["not (do_not_mail is true)", "not (do_not_service is true)"]
+
+
+def test_suppress_gated_by_available_columns():
+    # Only do_not_mail exists in the mart -> the text suppression is dropped.
+    where, _ = aq.build_filters(
+        {"suppress": ["do_not_mail", "do_not_text"]}, available={"do_not_mail"}
+    )
+    assert where == ["not (do_not_mail is true)"]
+
+
+def test_suppress_all_unavailable_produces_no_clause():
+    where, params = aq.build_filters({"suppress": ["do_not_mail"]}, available=set())
+    assert where == []
+    assert params == {}
+
+
+def test_suppress_rendered_in_display_sql():
+    sql = aq.build_display_sql({"suppress": ["do_not_service"]})
+    assert "not (do_not_service is true)" in sql
+
+
 # --- combined: include + exclude stays internally consistent ---------------
 
 def test_kitchen_sink_payload_is_consistent():

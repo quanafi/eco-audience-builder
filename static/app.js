@@ -25,6 +25,14 @@ const FLAGS = [
   { f: 'has_mobile', label: 'Has mobile' },
   { f: 'is_repeat_customer', label: 'Repeat customer' },
 ];
+// "Do not contact" suppressions (must match SUPPRESS in app/audience_query.py).
+// Global, not part of a filter set: selecting one removes opted-out customers from
+// the audience. No email opt-out exists in the source data.
+const SUPPRESS = [
+  { f: 'do_not_mail', label: 'Exclude do-not-mail' },
+  { f: 'do_not_text', label: 'Exclude do-not-text' },
+  { f: 'do_not_service', label: 'Exclude do-not-service' },
+];
 const SEGMENT_GROUPS = [
   { key: 'revenueSegments', label: 'Lifetime revenue tier' },
   { key: 'frequencySegments', label: 'Visit frequency' },
@@ -76,6 +84,7 @@ const ICONS = {
   layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
+  ban: '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
 };
 
 function emptySet() {
@@ -99,6 +108,7 @@ const state = {
   collapsed: {},                                     // section key -> false when user expands it (default collapsed)
   tab: 'preview', sql: '',
   lastCount: null,                                   // most recent audience count, for the tag panel
+  suppress: [],                                      // global do-not-contact suppressions (not per set)
 };
 
 // Preserve the tag list's scroll position across full filter re-renders.
@@ -150,6 +160,7 @@ function sectionActiveCount(key) {
     case 'segments': return s.revenueSegments.length + s.frequencySegments.length + s.recencySegments.length;
     case 'tags': return s.tags.length;
     case 'flags': return s.flags.length;
+    case 'suppress': return state.suppress.length;   // global, independent of the current set
     default: return 0;
   }
 }
@@ -242,6 +253,19 @@ function buildFilters() {
     FLAGS.map((x) => chip(x.label, s.flags.includes(x.f), cnt('flags', x.f, undefined))).join('') + `</div>`,
     { style: 'margin-bottom:6px' }));
 
+  // Do not contact — global suppressions that apply in both Include and Exclude
+  // modes. Counts are each channel's total flagged customers. Chips only appear for
+  // channels whose mart column exists; until then, a hint explains they're pending.
+  const supAvail = f.suppressAvailable || [];
+  const supCounts = f.suppress || {};
+  const supList = SUPPRESS.filter((x) => supAvail.includes(x.f));
+  const supBody = supList.length
+    ? `<div class="chips" data-group="suppress">` +
+      supList.map((x) => chip(x.label, state.suppress.includes(x.f), supCounts[x.f])).join('') + `</div>` +
+      `<div class="hint">Removes customers who opted out, in both Include and Exclude modes. No email opt-out exists in the data.</div>`
+    : `<div class="hint">Do-not-contact flags become available after the next customer-mart refresh.</div>`;
+  html.push(section('suppress', `${icon(ICONS.ban)}Do not contact`, supBody, { style: 'margin-bottom:6px' }));
+
   const tl = $('tagList');
   if (tl) _tagScroll = tl.scrollTop;          // remember scroll across the rebuild
   $('filters').innerHTML = html.join('');
@@ -266,6 +290,8 @@ function wireFilters(f) {
   // chip groups that map to value arrays
   const arrayGroups = { trades: f.trades.map((t) => t.value), regions: f.regions.map((r) => r.value) };
   for (const g of SEGMENT_GROUPS) arrayGroups[g.key] = (f.segments[g.key] || []).map((o) => o.value);
+  // Suppression chips, in the same order they're rendered (available channels only).
+  const supList = SUPPRESS.filter((x) => (f.suppressAvailable || []).includes(x.f));
 
   document.querySelectorAll('.chips[data-group]').forEach((box) => {
     const group = box.dataset.group;
@@ -273,6 +299,7 @@ function wireFilters(f) {
       btn.addEventListener('click', () => {
         const s = cur();
         if (group === 'flags') { toggle(s.flags, FLAGS[i].f); }
+        else if (group === 'suppress') { toggle(state.suppress, supList[i].f); }
         else if (group === 'spendPreset') {
           const p = SPEND_PRESETS[i];
           if (s.spendPreset === p.label) { s.spendPreset = null; s.spendMin = null; s.spendMax = null; }
@@ -344,7 +371,7 @@ function updateBadges() {
   setCnt('cntInclude', inc);
   setCnt('cntExclude', exc);
   const b = $('activeBadge');
-  const total = inc + exc;
+  const total = inc + exc + state.suppress.length;
   if (total > 0) { b.textContent = total + ' active'; b.hidden = false; } else { b.hidden = true; }
 }
 
@@ -370,7 +397,7 @@ function setPayload(s) {
 function payload() {
   // Include fields at the top level (back-compat with /api/audience); exclude nested.
   // `mode` tells the backend which set's chips to compute live facet counts for.
-  return { ...setPayload(state.sets.include), exclude: setPayload(state.sets.exclude), mode: state.mode };
+  return { ...setPayload(state.sets.include), exclude: setPayload(state.sets.exclude), suppress: state.suppress, mode: state.mode };
 }
 
 // ---- inverse of setPayload(): rehydrate UI state from a saved filter payload ----
@@ -417,6 +444,7 @@ function applyPayload(filters) {
   filters = filters || {};
   state.sets.include = setFromPayload(filters);
   state.sets.exclude = setFromPayload(filters.exclude || {});
+  state.suppress = [...(filters.suppress || [])];
   setMode(filters.mode === 'exclude' ? 'exclude' : 'include');
 }
 
@@ -531,6 +559,7 @@ function setTab(tab) {
 function clearAll() {
   state.sets.include = emptySet();
   state.sets.exclude = emptySet();
+  state.suppress = [];
   buildFilters(); refresh();
 }
 

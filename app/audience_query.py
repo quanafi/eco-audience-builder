@@ -39,6 +39,23 @@ FLAGS = {
     "is_member": "is_member = 1",
     "is_repeat_customer": "is_repeat_customer = 1",
 }
+# "Do not contact" suppressions. Unlike the include/exclude filter sets these are
+# global: a selected key always *removes* customers for whom the predicate is TRUE
+# (a customer is dropped if they asked not to be contacted on that channel). The
+# backing columns come from ServiceTitan via the customer mart:
+#   do_not_mail       customer-level boolean (physical mail opt-out)
+#   do_not_service    customer-level boolean ("do not service this customer")
+#   do_not_text_numbers  comma-joined list of the customer's do-not-text phone
+#                        numbers — non-empty means at least one number opted out.
+# There is no email opt-out in the source data, so no do_not_email suppression.
+# These columns may not be present in the live mart yet; callers gate on the set
+# of columns that actually exist (see _suppress_keys / snapshot.available_suppress)
+# so generated SQL never references a column the warehouse doesn't have.
+SUPPRESS = {
+    "do_not_mail": "do_not_mail is true",
+    "do_not_text": "(do_not_text_numbers is not null and do_not_text_numbers <> '')",
+    "do_not_service": "do_not_service is true",
+}
 SEGMENT_COLUMNS = {
     "revenueSegments": "lifetime_revenue_segment",
     "frequencySegments": "frequency_segment",
@@ -200,22 +217,42 @@ def _filter_clauses(payload: dict, render) -> list[str]:
     return where
 
 
-def _all_clauses(payload: dict, render) -> list[str]:
-    """Include clauses AND-ed with each exclude clause negated.
+def _suppress_keys(payload: dict, available) -> list[str]:
+    """Selected "do not contact" keys, in SUPPRESS order, limited to columns that
+    exist in the live mart.
+
+    `available` is the set of suppression keys whose backing columns are present
+    (snapshot.available_suppress). `None` means "assume all exist" — used by the
+    unit tests and any direct caller that isn't gating on a live snapshot.
+    Anything not in SUPPRESS or not available is dropped, so the generated SQL
+    never references a column the warehouse doesn't have yet.
+    """
+    requested = set(_as_list(payload.get("suppress")))
+    avail = set(SUPPRESS) if available is None else set(available)
+    return [k for k in SUPPRESS if k in requested and k in avail]
+
+
+def _all_clauses(payload: dict, render, available=None) -> list[str]:
+    """Include clauses AND-ed with each exclude clause negated, then the global
+    "do not contact" suppressions.
 
     Include clauses are AND-ed. Each exclude clause is negated and AND-ed, so a
-    customer is dropped if they match *any* exclude criterion. Both sets share the
-    one `render` instance (param names stay unique across them).
+    customer is dropped if they match *any* exclude criterion. Suppressions are
+    likewise negated and AND-ed (a customer is dropped if any selected do-not-
+    contact predicate is TRUE). Both sets share the one `render` instance (param
+    names stay unique across them); suppressions are constant SQL, no params.
     """
     where = _filter_clauses(payload, render)
     where.extend(f"not ({clause})" for clause in _filter_clauses(payload.get("exclude") or {}, render))
+    where.extend(f"not ({SUPPRESS[k]})" for k in _suppress_keys(payload, available))
     return where
 
 
-def build_filters(payload: dict) -> tuple[list[str], dict]:
-    """Return (where_clauses, bind_params) for the include + exclude filter sets."""
+def build_filters(payload: dict, available=None) -> tuple[list[str], dict]:
+    """Return (where_clauses, bind_params) for the include + exclude filter sets
+    plus any available "do not contact" suppressions."""
     render = _BindRenderer()
-    return _all_clauses(payload, render), render.params
+    return _all_clauses(payload, render, available), render.params
 
 
 def _where_sql(where: list[str]) -> str:
@@ -277,7 +314,7 @@ def run_audience(payload: dict) -> dict:
         "baseCount": int(base or 0),
         "pctBase": (audience / base * 100.0) if base else 0.0,
         "rows": rows,
-        "sql": build_display_sql(payload),
+        "sql": build_display_sql(payload, snap.available_suppress),
         "limited": audience > ROW_LIMIT,
         "facetCounts": snap.facet_counts(payload),
     }
@@ -303,14 +340,15 @@ def _present_row(r: dict) -> dict:
     }
 
 
-def build_display_sql(payload: dict) -> str:
+def build_display_sql(payload: dict, available=None) -> str:
     """Render a copy-pasteable SELECT with literal (validated) values inlined.
 
     For display only — run_audience executes the parameterized form (build_filters).
     Both share _all_clauses, so the displayed SQL always matches what actually ran;
-    only the value rendering differs.
+    only the value rendering differs. `available` gates the suppression clauses to
+    columns the live mart actually has.
     """
-    where = _all_clauses(payload, _LiteralRenderer())
+    where = _all_clauses(payload, _LiteralRenderer(), available)
     where_sql = _where_sql(where)
     return f"""-- Audience Builder · read-only segment query
 -- source mart: {TABLE}  (one row per customer_id, ServiceTitan-derived)

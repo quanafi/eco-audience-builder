@@ -26,6 +26,7 @@ from .audience_query import (
     JOBS_TABLE,
     REGIONS,
     SEGMENT_COLUMNS,
+    SUPPRESS,
     TABLE,
     TRADES,
     _as_list,
@@ -33,6 +34,16 @@ from .audience_query import (
     _num,
 )
 from .db import run_query
+
+# Mart column each "do not contact" suppression key reads. do_not_text derives a
+# boolean from the comma-joined do_not_text_numbers list (non-empty => opted out).
+# These columns may not exist in the mart yet; from_warehouse probes for them and
+# falls back to a constant so a pre-migration warehouse still loads.
+_SUPPRESS_SOURCE = {
+    "do_not_mail": "do_not_mail",
+    "do_not_text": "do_not_text_numbers",
+    "do_not_service": "do_not_service",
+}
 
 # Python port of audience_query.ZIP_EXPR: a trailing 5-digit ZIP, optional +4.
 _ZIP_RE = re.compile(r"(\d{5})(?:-\d{4})?\s*$")
@@ -71,6 +82,8 @@ class Snapshot:
         zips: np.ndarray,
         segments: dict[str, np.ndarray],
         tag_index: dict[str, np.ndarray],
+        suppress_masks: dict[str, np.ndarray] | None = None,
+        available_suppress: set[str] | None = None,
     ):
         self.customer_id = customer_id
         self.n = len(customer_id)
@@ -82,14 +95,42 @@ class Snapshot:
         self.zips = zips
         self.segments = segments
         self.tag_index = tag_index
+        # key -> boolean column (predicate TRUE => customer opted out of that channel).
+        # Always covers every SUPPRESS key; a key whose mart column is absent gets an
+        # all-False column (a harmless no-op). `available_suppress` is the subset whose
+        # columns really exist — it gates the generated SQL (display + export).
+        self.suppress_masks = suppress_masks or {}
+        self.available_suppress = available_suppress or set()
         self._all_true = np.ones(self.n, dtype=bool)
         # tag -> precomputed boolean membership column (built lazily, cached).
         self._tag_mask_cache: dict[str, np.ndarray] = {}
 
     # ----------------------------------------------------------------- builders
+    @staticmethod
+    def _mart_columns() -> set[str]:
+        """Column names present in the customer mart, for probing optional columns."""
+        schema, _, name = TABLE.partition(".")
+        rows = run_query(
+            "select column_name from information_schema.columns "
+            "where table_schema = :schema and table_name = :name",
+            {"schema": schema, "name": name},
+        )
+        return {r["column_name"] for r in rows}
+
     @classmethod
     def from_warehouse(cls) -> "Snapshot":
         """Load the snapshot with two read-only queries (customers + job tags)."""
+        present = cls._mart_columns()
+        available_suppress = {k for k, col in _SUPPRESS_SOURCE.items() if col in present}
+        # Per-key SQL expression, falling back to a constant when the backing column
+        # isn't in the mart yet, so a pre-migration warehouse still loads. Each yields
+        # a boolean: TRUE => the customer opted out of that channel.
+        dnm = "do_not_mail is true" if "do_not_mail" in present else "false"
+        dns = "do_not_service is true" if "do_not_service" in present else "false"
+        dnt = (
+            "(do_not_text_numbers is not null and do_not_text_numbers <> '')"
+            if "do_not_text_numbers" in present else "false"
+        )
         rows = run_query(
             f"""select
                 customer_id,
@@ -109,7 +150,10 @@ class Snapshot:
                 frequency_segment,
                 paid_recency_segment,
                 (email is not null and email <> '')               as has_email,
-                (phone_number is not null and phone_number <> '') as has_mobile
+                (phone_number is not null and phone_number <> '') as has_mobile,
+                {dnm} as do_not_mail,
+                {dns} as do_not_service,
+                {dnt} as do_not_text
             from {TABLE}"""
         )
 
@@ -122,6 +166,7 @@ class Snapshot:
                 "is_columbus_customer", "is_dayton_customer",
                 "is_cincinnati_customer", "is_chillicothe_customer",
                 "is_member", "is_repeat_customer", "has_email", "has_mobile",
+                "do_not_mail", "do_not_service", "do_not_text",
             )
         }
         days = np.empty(n, dtype=np.float64)
@@ -148,11 +193,12 @@ class Snapshot:
         trade_masks = {name: cols_bool[col] for name, col in TRADES.items()}
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
+        suppress_masks = cls._suppress_masks_from(cols_bool, n)
         segments = {gkey: seg_lists[col] for gkey, col in SEGMENT_COLUMNS.items()}
 
         tag_index = cls._load_tag_index(id_to_row, n)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index)
+                   revenue, zips, segments, tag_index, suppress_masks, available_suppress)
 
     @staticmethod
     def _flag_masks_from(cols_bool: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -162,6 +208,16 @@ class Snapshot:
             "has_mobile": cols_bool["has_mobile"],
             "is_member": cols_bool["is_member"],
             "is_repeat_customer": cols_bool["is_repeat_customer"],
+        }
+
+    @staticmethod
+    def _suppress_masks_from(cols_bool: dict[str, np.ndarray], n: int) -> dict[str, np.ndarray]:
+        """Map each SUPPRESS key to its boolean column (TRUE => opted out). A key
+        whose column wasn't loaded (e.g. test rows without it) gets all-False, which
+        makes the suppression a harmless no-op."""
+        return {
+            key: cols_bool.get(key, np.zeros(n, dtype=bool))
+            for key in SUPPRESS
         }
 
     @staticmethod
@@ -207,6 +263,7 @@ class Snapshot:
                 "is_columbus_customer", "is_dayton_customer",
                 "is_cincinnati_customer", "is_chillicothe_customer",
                 "is_member", "is_repeat_customer", "has_email", "has_mobile",
+                "do_not_mail", "do_not_service", "do_not_text",
             )
         }
         days = np.array(
@@ -235,8 +292,9 @@ class Snapshot:
         trade_masks = {name: cols_bool[col] for name, col in TRADES.items()}
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
+        suppress_masks = cls._suppress_masks_from(cols_bool, n)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index)
+                   revenue, zips, segments, tag_index, suppress_masks, set(SUPPRESS))
 
     # --------------------------------------------------------------- filtering
     def _tag_mask(self, tag: str) -> np.ndarray:
@@ -322,6 +380,13 @@ class Snapshot:
             mask &= truth
         for truth, known in self._clauses(payload.get("exclude") or {}):
             mask &= known & ~truth
+        # Global "do not contact" suppressions: drop anyone the predicate flags
+        # (mirrors `not (suppress_expr)` in the SQL). Unavailable keys carry an
+        # all-False column, so they no-op.
+        for key in _as_list(payload.get("suppress")):
+            m = self.suppress_masks.get(key)
+            if m is not None:
+                mask &= ~m
         return mask
 
     def stats(self, mask: np.ndarray) -> dict:
@@ -398,6 +463,13 @@ class Snapshot:
             "regions": [{"value": name, "count": int(m.sum())} for name, m in self.region_masks.items()],
             "segments": segs,
             "flags": {name: int(m.sum()) for name, m in self.flag_masks.items()},
+            # Total customers flagged on each available do-not-contact channel, plus
+            # which channels exist in the live mart (drives the UI's suppression chips).
+            "suppress": {
+                key: int(self.suppress_masks[key].sum())
+                for key in SUPPRESS if key in self.available_suppress
+            },
+            "suppressAvailable": sorted(self.available_suppress),
         }
 
     def tag_facets(self) -> list[dict]:
