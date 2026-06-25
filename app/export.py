@@ -104,7 +104,7 @@ def _build_query(columns: list[str], filters: dict) -> tuple[str, dict]:
     sql = (
         f"select\n    {select_list}\n"
         f"from {TABLE}{where_sql}\n"
-        f"order by lifetime_revenue desc nulls last"
+        f"order by last_completed_job desc nulls last"
     )
     return sql, params
 

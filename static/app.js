@@ -96,7 +96,9 @@ const state = {
   sets: { include: emptySet(), exclude: emptySet() },
   tagSearch: '',                                     // transient: filters the (long) tag list
   tagsLoaded: false,                                 // tag universe loads async (slow query)
+  collapsed: {},                                     // section key -> false when user expands it (default collapsed)
   tab: 'preview', sql: '',
+  lastCount: null,                                   // most recent audience count, for the tag panel
 };
 
 // Preserve the tag list's scroll position across full filter re-renders.
@@ -131,50 +133,83 @@ function chip(label, on, count) {
   return `<button type="button" class="chip${on ? ' on' : ''}">${esc(label)}${c}</button>`;
 }
 
+// Sections collapse by default; clicking the header expands them. State persists
+// across the frequent buildFilters() re-renders via state.collapsed.
+const isCollapsed = (key) => state.collapsed[key] !== false;
+
+// How many filters are active in a section — shown as a badge so a collapsed
+// section still communicates whether it's in use.
+function sectionActiveCount(key) {
+  const s = cur();
+  switch (key) {
+    case 'trades': return s.trades.length;
+    case 'recency': return s.recency !== 'any' ? 1 : 0;
+    case 'regions': return s.regions.length;
+    case 'zip': return s.zips.split(/[\s,]+/).some((z) => /^\d{5}$/.test(z.trim())) ? 1 : 0;
+    case 'spend': return (s.spendMin != null || s.spendMax != null) ? 1 : 0;
+    case 'segments': return s.revenueSegments.length + s.frequencySegments.length + s.recencySegments.length;
+    case 'tags': return s.tags.length;
+    case 'flags': return s.flags.length;
+    default: return 0;
+  }
+}
+
+// Wrap a section's content in a collapsible accordion. headInner is the icon + label.
+function section(key, headInner, body, opts = {}) {
+  const n = sectionActiveCount(key);
+  const badge = n ? `<span class="fhead-cnt">${fmtInt(n)}</span>` : '';
+  const style = opts.style ? ` style="${opts.style}"` : '';
+  return `<div class="fsection${isCollapsed(key) ? ' collapsed' : ''}" data-section="${key}"${style}>` +
+    `<button type="button" class="fhead" data-toggle="${key}"><span class="fhead-main">${headInner}</span>${badge}` +
+    `<svg class="fchevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+    `</button><div class="fbody">${body}</div></div>`;
+}
+
 function buildFilters() {
   const f = state.facets;
   const s = cur();
   const html = [];
 
   // Trade
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.trade)}Trade</div><div class="chips" data-group="trades">` +
-    f.trades.map((t) => chip(t.value, s.trades.includes(t.value), cnt('trades', t.value, t.count))).join('') + `</div></div>`);
+  html.push(section('trades', `${icon(ICONS.trade)}Trade`,
+    `<div class="chips" data-group="trades">` +
+    f.trades.map((t) => chip(t.value, s.trades.includes(t.value), cnt('trades', t.value, t.count))).join('') + `</div>`));
 
   // Recency
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.clock)}Recency (last job)</div>` +
+  html.push(section('recency', `${icon(ICONS.clock)}Recency (last job)`,
     `<div class="segs" data-group="recency">` +
     RECENCY.map((r) => `<button type="button" class="seg${s.recency === r.k ? ' on' : ''}" data-k="${r.k}">${r.label}</button>`).join('') + `</div>` +
     (s.recency === 'custom'
       ? `<div class="range"><input class="fin" type="number" min="0" placeholder="min" id="recMin" value="${s.recMin ?? ''}"><span class="muted">to</span><input class="fin" type="number" placeholder="max" id="recMax" value="${s.recMax ?? ''}"><span class="muted nowrap">days ago</span></div>`
-      : '') + `</div>`);
+      : '')));
 
   // Region
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.pin)}Region</div><div class="chips" data-group="regions">` +
-    f.regions.map((r) => chip(r.value, s.regions.includes(r.value), cnt('regions', r.value, r.count))).join('') + `</div></div>`);
+  html.push(section('regions', `${icon(ICONS.pin)}Region`,
+    `<div class="chips" data-group="regions">` +
+    f.regions.map((r) => chip(r.value, s.regions.includes(r.value), cnt('regions', r.value, r.count))).join('') + `</div>`));
 
   // ZIP
   const zl = s.zips.split(/[\s,]+/).map((z) => z.trim()).filter(Boolean);
   const zinvalid = zl.length > 0 && !zl.some((z) => /^\d{5}$/.test(z));
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.hash)}ZIP code</div>` +
+  html.push(section('zip', `${icon(ICONS.hash)}ZIP code`,
     `<input class="fin" type="text" inputmode="numeric" id="zip" placeholder="e.g. 43230, 45601" value="${esc(s.zips)}">` +
-    (zinvalid ? `<div class="hint">Enter one or more 5-digit ZIPs like <b>43230</b>.</div>` : '') + `</div>`);
+    (zinvalid ? `<div class="hint">Enter one or more 5-digit ZIPs like <b>43230</b>.</div>` : '')));
 
   // Spend
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.dollar)}Lifetime spend</div>` +
+  html.push(section('spend', `${icon(ICONS.dollar)}Lifetime spend`,
     `<div class="range"><span class="muted">$</span><input class="fin" type="number" min="0" placeholder="0" id="spendMin" value="${s.spendMin ?? ''}"><span class="muted nowrap">to $</span><input class="fin" type="number" placeholder="any" id="spendMax" value="${s.spendMax ?? ''}"></div>` +
     `<div class="chips" data-group="spendPreset" style="margin-top:11px">` +
-    SPEND_PRESETS.map((p) => chip(p.label, s.spendPreset === p.label)).join('') + `</div></div>`);
+    SPEND_PRESETS.map((p) => chip(p.label, s.spendPreset === p.label)).join('') + `</div>`));
 
   // Segments
-  let segHtml = `<div class="fsection"><div class="fhead">${icon(ICONS.layers)}Segments</div>`;
+  let segBody = '';
   for (const g of SEGMENT_GROUPS) {
     const opts = (f.segments[g.key] || []);
     if (!opts.length) continue;
-    segHtml += `<div class="fsublabel">${g.label}</div><div class="chips" data-group="${g.key}">` +
+    segBody += `<div class="fsublabel">${g.label}</div><div class="chips" data-group="${g.key}">` +
       opts.map((o) => chip(segLabel(o.value), s[g.key].includes(o.value), cnt(g.key, o.value, o.count))).join('') + `</div>`;
   }
-  segHtml += `</div>`;
-  html.push(segHtml);
+  html.push(section('segments', `${icon(ICONS.layers)}Segments`, segBody));
 
   // Job tags — a searchable, scrollable list (600+ tags, many operational), so you
   // can browse to find one when you can't recall the exact name. Selected tags show
@@ -196,15 +231,16 @@ function buildFilters() {
   const tagListInner = !state.tagsLoaded
     ? '<div class="hint">Loading tags…</div>'
     : (listRows || '<div class="hint">No tags match.</div>');
-  html.push(`<div class="fsection"><div class="fhead">${icon(ICONS.tag)}Job tags</div>` +
+  html.push(section('tags', `${icon(ICONS.tag)}Job tags`,
     selChips +
     `<input class="fin tag-search" type="text" id="tagSearch" autocomplete="off" placeholder="${tagPlaceholder}" value="${esc(state.tagSearch)}"${state.tagsLoaded ? '' : ' disabled'}>` +
-    `<div class="tag-list" id="tagList">${tagListInner}</div></div>`);
+    `<div class="tag-list" id="tagList">${tagListInner}</div>`));
 
   // Reachability
-  html.push(`<div class="fsection" style="margin-bottom:6px"><div class="fhead">${icon(ICONS.check, true)}Reachability</div>` +
+  html.push(section('flags', `${icon(ICONS.check, true)}Reachability`,
     `<div class="chips" data-group="flags">` +
-    FLAGS.map((x) => chip(x.label, s.flags.includes(x.f), cnt('flags', x.f, undefined))).join('') + `</div></div>`);
+    FLAGS.map((x) => chip(x.label, s.flags.includes(x.f), cnt('flags', x.f, undefined))).join('') + `</div>`,
+    { style: 'margin-bottom:6px' }));
 
   const tl = $('tagList');
   if (tl) _tagScroll = tl.scrollTop;          // remember scroll across the rebuild
@@ -216,6 +252,17 @@ function buildFilters() {
 }
 
 function wireFilters(f) {
+  // Section headers toggle their own collapse — just flip the class, no rebuild,
+  // so focus and scroll inside other sections are untouched.
+  document.querySelectorAll('.fhead[data-toggle]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.toggle;
+      const collapsed = !isCollapsed(key);     // desired new state
+      state.collapsed[key] = collapsed;
+      btn.closest('.fsection').classList.toggle('collapsed', collapsed);
+    });
+  });
+
   // chip groups that map to value arrays
   const arrayGroups = { trades: f.trades.map((t) => t.value), regions: f.regions.map((r) => r.value) };
   for (const g of SEGMENT_GROUPS) arrayGroups[g.key] = (f.segments[g.key] || []).map((o) => o.value);
@@ -326,6 +373,53 @@ function payload() {
   return { ...setPayload(state.sets.include), exclude: setPayload(state.sets.exclude), mode: state.mode };
 }
 
+// ---- inverse of setPayload(): rehydrate UI state from a saved filter payload ----
+// Saved audiences store the payload() JSON; loading one must reconstruct the
+// emptySet()-shaped UI state, including resolving the numeric recency/spend values
+// back to the preset buttons the user originally clicked.
+function recencyKeyFromMinMax(min, max) {
+  const m = min == null ? null : Number(min);
+  const x = max == null ? null : Number(max);
+  const found = RECENCY.find((r) => r.k !== 'custom' && (r.min ?? null) === m && (r.max ?? null) === x);
+  if (found) return found.k;                 // 'any' when both null
+  return (m == null && x == null) ? 'any' : 'custom';
+}
+function spendPresetFromMinMax(min, max) {
+  if (max != null || min == null) return null;     // presets are min-only ($500+, …)
+  const p = SPEND_PRESETS.find((pr) => pr.min === Number(min));
+  return p ? p.label : null;
+}
+
+function setFromPayload(p) {
+  p = p || {};
+  const recency = recencyKeyFromMinMax(p.recencyMin, p.recencyMax);
+  return {
+    trades: [...(p.trades || [])],
+    regions: [...(p.regions || [])],
+    recency,
+    recMin: recency === 'custom' ? (p.recencyMin ?? null) : null,
+    recMax: recency === 'custom' ? (p.recencyMax ?? null) : null,
+    zips: p.zips || '',
+    spendMin: p.spendMin ?? null,
+    spendMax: p.spendMax ?? null,
+    spendPreset: spendPresetFromMinMax(p.spendMin ?? null, p.spendMax ?? null),
+    revenueSegments: [...(p.revenueSegments || [])],
+    frequencySegments: [...(p.frequencySegments || [])],
+    recencySegments: [...(p.recencySegments || [])],
+    flags: [...(p.flags || [])],
+    tags: [...(p.tags || [])],
+  };
+}
+
+// Load a saved audience back into the UI. setMode() rebuilds the filters and re-runs
+// the query, so the preview reflects the loaded segment immediately.
+function applyPayload(filters) {
+  filters = filters || {};
+  state.sets.include = setFromPayload(filters);
+  state.sets.exclude = setFromPayload(filters.exclude || {});
+  setMode(filters.mode === 'exclude' ? 'exclude' : 'include');
+}
+
 let _seq = 0, _timer = null;
 function refresh() {
   clearTimeout(_timer);
@@ -352,6 +446,7 @@ async function runQuery() {
 
 function renderResult(d) {
   state.sql = d.sql || '';
+  state.lastCount = d.audienceCount;
   $('statAudience').textContent = fmtInt(d.audienceCount);
   $('statPct').textContent = (d.pctBase || 0).toFixed(1) + '%';
   $('statReach').textContent = fmtInt(d.reachCount);
@@ -452,18 +547,132 @@ function setMode(mode) {
   refresh();
 }
 
+// ---------------------------------------------------------------- dropdown panels
+// The Saved / Tag / Export panels are all position:fixed dropdowns anchored under
+// their trigger button. This helper handles anchoring, toggling, mutual-exclusion
+// (opening one closes the others) and re-anchoring on scroll/resize.
+const _dropdowns = [];
+function setupDropdown(btnId, panelId, onOpen) {
+  const btn = $(btnId), panel = $(panelId);
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    panel.style.top = `${r.bottom + 8}px`;
+    panel.style.right = `${window.innerWidth - r.right}px`;
+  };
+  const close = () => { panel.hidden = true; };
+  const open = () => {
+    _dropdowns.forEach((d) => { if (d.panel !== panel) d.close(); });
+    place(); panel.hidden = false;
+    if (onOpen) onOpen();
+  };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); if (panel.hidden) open(); else close(); });
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  window.addEventListener('resize', () => { if (!panel.hidden) place(); });
+  window.addEventListener('scroll', () => { if (!panel.hidden) place(); }, true);
+  const d = { panel, place, close, open };
+  _dropdowns.push(d);
+  return d;
+}
+function closeAllDropdowns() { _dropdowns.forEach((d) => d.close()); }
+
 // ---------------------------------------------------------------- export
 function setupExport() {
   $('exportCols').innerHTML = EXPORT_COLUMNS.map((grp) =>
     `<div class="export-grp"><div class="export-grp-lbl">${grp.group}</div>` +
     grp.cols.map((c) => `<label class="export-col"><input type="checkbox" value="${c.key}"${c.def ? ' checked' : ''}>${esc(c.label)}</label>`).join('') +
     `</div>`).join('');
-
-  const btn = $('exportBtn'), panel = $('exportPanel');
-  btn.addEventListener('click', (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; });
-  panel.addEventListener('click', (e) => e.stopPropagation());
-  document.addEventListener('click', () => { panel.hidden = true; });
+  setupDropdown('exportBtn', 'exportPanel');
   $('exportDownload').addEventListener('click', doExport);
+}
+
+// ---------------------------------------------------------------- saved audiences
+// PROTOTYPE: persistence is mocked server-side (app/audiences.py). Loading is real —
+// applyPayload() fully rehydrates the UI from a saved filter definition.
+function setupSaved() {
+  setupDropdown('savedBtn', 'savedPanel', loadSavedList);
+  $('saveBtn').addEventListener('click', doSaveAudience);
+  $('saveName').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSaveAudience(); });
+}
+
+async function loadSavedList() {
+  const list = $('savedList');
+  list.innerHTML = '<div class="saved-empty">Loading…</div>';
+  try {
+    const res = await fetch('/api/audiences');
+    const data = await res.json();
+    const items = (data && data.audiences) || [];
+    if (!items.length) { list.innerHTML = '<div class="saved-empty">No saved audiences yet.</div>'; return; }
+    list.innerHTML = items.map((a, i) =>
+      `<button type="button" class="saved-item" data-i="${i}"><span class="saved-name">${esc(a.name)}</span><span class="saved-meta">Load</span></button>`
+    ).join('');
+    list.querySelectorAll('.saved-item').forEach((b) => {
+      b.addEventListener('click', () => {
+        applyPayload(items[Number(b.dataset.i)].filters);
+        closeAllDropdowns();
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="saved-empty">Could not load saved audiences.</div>';
+  }
+}
+
+async function doSaveAudience() {
+  const name = $('saveName').value.trim();
+  const foot = $('savedFoot'), note = $('savedNote');
+  const show = (msg, ok) => { foot.hidden = false; note.className = ok ? 'export-note ok' : 'export-note'; note.textContent = msg; };
+  if (!name) { show('Name this audience first.', false); return; }
+  const btn = $('saveBtn'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/audiences', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, filters: payload() }),
+    });
+    const data = await res.json();
+    if (data.error) { show(data.error, false); }
+    else { show(data.message || 'Saved.', true); $('saveName').value = ''; loadSavedList(); }
+  } catch (e) {
+    show(String(e), false);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+// ---------------------------------------------------------------- tag write-back
+// PROTOTYPE: the server logs the ServiceTitan payload to the console instead of
+// calling the API (app/servicetitan.py).
+function setupTag() {
+  setupDropdown('tagstBtn', 'tagstPanel', updateTagTarget);
+  $('tagstApply').addEventListener('click', doApplyTag);
+  $('tagstName').addEventListener('keydown', (e) => { if (e.key === 'Enter') doApplyTag(); });
+}
+
+function updateTagTarget() {
+  const n = state.lastCount;
+  $('tagstTarget').textContent = (n != null)
+    ? `Will tag ${fmtInt(n)} matching ${n === 1 ? 'customer' : 'customers'} in ServiceTitan.`
+    : '';
+}
+
+async function doApplyTag() {
+  const tag = $('tagstName').value.trim();
+  const note = $('tagstNote');
+  const show = (msg, ok) => { note.className = ok ? 'export-note ok' : 'export-note'; note.textContent = msg; };
+  if (!tag) { show('Enter a tag name.', false); return; }
+  const btn = $('tagstApply'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Applying…'; note.textContent = '';
+  try {
+    const res = await fetch('/api/tags/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: payload(), tag }),
+    });
+    const data = await res.json();
+    show(data.error || data.message || 'Done.', !data.error);
+  } catch (e) {
+    show(String(e), false);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 }
 
 async function doExport() {
@@ -506,6 +715,9 @@ async function init() {
   $('clearAll').addEventListener('click', clearAll);
   document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   setupExport();
+  setupSaved();
+  setupTag();
+  document.addEventListener('click', closeAllDropdowns);   // click outside closes any open panel
   $('copySql').addEventListener('click', () => {
     navigator.clipboard.writeText(state.sql).catch(() => {});
     const b = $('copySql'); const t = b.textContent; b.textContent = 'Copied!';

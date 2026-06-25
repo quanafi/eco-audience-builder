@@ -19,10 +19,6 @@ body{margin:0;background:var(--paper);color:var(--navy);
 .hdr-div{width:1px;height:30px;background:rgba(255,255,255,.16)}
 .hdr-title{color:#fff;font-family:'Work Sans',sans-serif;font-weight:700;font-size:16px;letter-spacing:.005em}
 .hdr-sub{color:rgba(255,255,255,.58);font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;margin-top:3px}
-.ro-pill{display:flex;align-items:center;gap:8px;background:rgba(132,189,0,.16);border:1px solid rgba(132,189,0,.5);
-  color:var(--lime);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:999px}
-.ro-dot{width:7px;height:7px;border-radius:50%;background:var(--lime);animation:pulse 2.4s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(132,189,0,.55)}70%{box-shadow:0 0 0 6px rgba(132,189,0,0)}100%{box-shadow:0 0 0 0 rgba(132,189,0,0)}}
 .brandbar{height:6px;background:linear-gradient(90deg,#0057B8,#009FDF 45%,#00843D 75%,#84BD00)}
 
 .wrap{max-width:1320px;margin:0 auto;padding:28px 24px 56px}
@@ -42,8 +38,18 @@ body{margin:0;background:var(--paper);color:var(--navy);
 .filters-body{padding:16px 20px 6px}
 .filters-foot{padding:6px 20px 22px}
 
-.fsection{margin-bottom:22px}
-.fhead{display:flex;align-items:center;gap:9px;font-weight:700;font-size:13px;margin-bottom:11px}
+.fsection{margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.fsection:last-child{border-bottom:none}
+.fhead{display:flex;align-items:center;gap:9px;font-weight:700;font-size:13px;width:100%;
+  background:none;border:none;padding:0;margin:0;cursor:pointer;color:inherit;font-family:inherit;text-align:left}
+.fhead-main{display:flex;align-items:center;gap:9px;margin-right:auto}
+.fhead-cnt{font-size:11px;font-weight:700;color:#fff;background:var(--navy);min-width:19px;height:19px;
+  border-radius:999px;display:inline-grid;place-items:center;padding:0 6px;margin-right:8px}
+.fchevron{flex:none;color:var(--g500);transition:transform .15s}
+.fhead:hover .fchevron{color:var(--navy)}
+.fsection.collapsed .fchevron{transform:rotate(-90deg)}
+.fbody{margin-top:12px}
+.fsection.collapsed .fbody{display:none}
 .ficon{width:26px;height:26px;border-radius:50%;background:var(--cyan);display:grid;place-items:center;flex:none}
 .ficon.lime{background:var(--lime)}
 .fsublabel{font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.05em;margin:13px 0 8px}
@@ -67,6 +73,7 @@ input.fin.tag-search{margin-bottom:8px}
 .tag-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;
   font-size:12.5px;font-weight:600;color:var(--g700);padding:7px 9px;border:none;border-radius:7px;background:none;
   cursor:pointer;font-family:inherit;transition:background .1s}
+.tag-opt[hidden]{display:none}
 .tag-opt:hover{background:var(--paper)}
 .tag-opt.on{background:var(--navy);color:#fff}
 .tag-opt-lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -163,13 +170,33 @@ pre.sql .pl{color:#dce6f0}
 .mode-btn[data-mode="exclude"] .mode-cnt{background:#a4262c}
 .mode-hint{margin:9px 20px 0;font-size:11.5px;color:var(--g500)}
 
+/* card actions (saved / tag / export) */
+.card-actions{margin-left:auto;display:flex;align-items:center;gap:9px}
+.save-wrap,.tagst-wrap{position:relative;display:flex;align-items:center}
+
+/* save current + saved list (reuses .export-panel) */
+.save-new{display:flex;gap:8px}
+.save-new .fin{flex:1;min-width:0}
+.saved-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;padding-right:2px}
+.saved-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  text-align:left;font-family:inherit;font-size:13px;font-weight:600;color:var(--g700);cursor:pointer;
+  background:#fff;border:1px solid var(--line2);border-radius:10px;padding:9px 12px;transition:all .12s}
+.saved-item:hover{border-color:var(--cyan);color:var(--navy);background:var(--paper)}
+.saved-item .saved-meta{font-size:10.5px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.04em;flex:none}
+.saved-empty{font-size:12px;color:var(--g500)}
+.tagst-target{font-size:12px;color:var(--g700);margin:-4px 0 4px}
+.export-note.ok{color:#4d6b00}
+
 /* export */
-.export-wrap{margin-left:auto;position:relative;display:flex;align-items:center}
+.export-wrap{position:relative;display:flex;align-items:center}
 .btn-export{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;padding:7px 14px;border-radius:9px;border:1px solid var(--line2);background:#fff;
   color:var(--g700);cursor:pointer;font-family:inherit;transition:all .12s}
 .btn-export:hover{border-color:var(--cyan);color:var(--navy)}
-.export-panel{position:absolute;top:calc(100% + 8px);right:0;width:320px;z-index:40;background:#fff;
+/* Fixed (not absolute) so the dropdown is never clipped by the results card's
+   overflow:hidden — its height is independent of how short the audience preview is.
+   top/right are set in app.js from the trigger button's position. */
+.export-panel{position:fixed;width:320px;z-index:40;background:#fff;
   border:1px solid var(--line);border-radius:14px;padding:16px;
   box-shadow:0 8px 18px rgba(15,23,33,.10),0 24px 48px -24px rgba(15,23,33,.4)}
 .export-head{font-family:'Work Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.04em;

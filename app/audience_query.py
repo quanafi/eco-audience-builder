@@ -222,115 +222,14 @@ def _where_sql(where: list[str]) -> str:
     return ("\nwhere " + "\n  and ".join(where)) if where else ""
 
 
-def facet_counts(payload: dict) -> dict:
-    """Per-option customer counts that reflect the *current* selection.
-
-    Standard faceted-search behavior: each facet group's counts are computed
-    against every other active filter but ignore that group's own selection — so
-    selecting "Electric" updates the Region counts to electric-customers-per-region,
-    while the Trade counts still show each trade's total within the rest of the
-    audience. `mode` says which set (include/exclude) the sidebar is editing.
-
-    Returns {group: {option_value: count}}. Queries are de-duplicated by base
-    filter, so an unfiltered view is a single query and each additional actively
-    filtered group adds at most one more.
-    """
-    from .facets import get_facets  # lazy: facets imports from this module
-
-    mode = payload.get("mode") or "include"
-    gf = get_facets()
-    seg_facets = gf.get("segments", {})
-
-    # Cached global totals — used verbatim for any facet group with no *other* active
-    # filter (its base WHERE is empty), so the common unfiltered view needs zero queries.
-    globals_map: dict[str, dict] = {
-        "trades": {o["value"]: o["count"] for o in gf.get("trades", [])},
-        "regions": {o["value"]: o["count"] for o in gf.get("regions", [])},
-        "flags": dict(gf.get("flags", {})),
-    }
-    for gkey in SEGMENT_COLUMNS:
-        globals_map[gkey] = {o["value"]: o["count"] for o in seg_facets.get(gkey, [])}
-
-    # group key -> list of (option_value, static_condition_or_None, segment_(col,value)_or_None)
-    spec: list[tuple[str, list]] = []
-    spec.append(("trades", [(v, f"{col} = 1", None) for v, col in TRADES.items()]))
-    spec.append(("regions", [(v, f"{col} = 1", None) for v, col in REGIONS.items()]))
-    for gkey, col in SEGMENT_COLUMNS.items():
-        spec.append((gkey, [(o["value"], None, (col, o["value"])) for o in seg_facets.get(gkey, [])]))
-    spec.append(("flags", [(v, expr, None) for v, expr in FLAGS.items()]))
-
-    def base_for(gkey: str) -> tuple[list[str], dict]:
-        """build_filters for the full selection minus this group's own selection."""
-        if mode == "exclude":
-            p = dict(payload)
-            ex = {k: v for k, v in (payload.get("exclude") or {}).items() if k != gkey}
-            p["exclude"] = ex
-        else:
-            p = {k: v for k, v in payload.items() if k != gkey}
-            p["exclude"] = payload.get("exclude") or {}
-        return build_filters(p)
-
-    # Bucket facet groups that share an identical base so they run in one query.
-    buckets: dict[tuple, dict] = {}
-    for gkey, opts in spec:
-        if not opts:
-            continue
-        where, params = base_for(gkey)
-        bucket = buckets.setdefault(tuple(where), {"where": where, "params": dict(params), "groups": []})
-        bucket["groups"].append((gkey, opts))
-
-    out: dict[str, dict] = {}
-    for gi_base, bucket in enumerate(buckets.values()):
-        # Empty base => counts are the global totals; serve from cache, skip the query.
-        if not bucket["where"]:
-            for gkey, opts in bucket["groups"]:
-                gmap = globals_map.get(gkey, {})
-                out[gkey] = {value: gmap.get(value, 0) for value, _, _ in opts}
-            continue
-        selects: list[str] = []
-        params = dict(bucket["params"])
-        alias_map: list[tuple[str, str, object]] = []
-        for gi, (gkey, opts) in enumerate(bucket["groups"]):
-            for oi, (value, cond, seg) in enumerate(opts):
-                if seg is not None:
-                    col, segval = seg
-                    pname = f"fcp_{gi_base}_{gi}_{oi}"
-                    params[pname] = segval
-                    cond_sql = f"{col} = :{pname}"
-                else:
-                    cond_sql = cond
-                alias = f"fc_{gi_base}_{gi}_{oi}"
-                selects.append(f"count(*) filter (where {cond_sql}) as {alias}")
-                alias_map.append((alias, gkey, value))
-        sql = "select\n  " + ",\n  ".join(selects) + f"\nfrom {TABLE}{_where_sql(bucket['where'])}"
-        row = run_query(sql, params)[0]
-        for alias, gkey, value in alias_map:
-            out.setdefault(gkey, {})[value] = int(row[alias] or 0)
-
-    # Tags are intentionally absent here: 605+ options are too many to recompute per
-    # selection, and the UI shows each tag's static global reach (from /api/tags) as a
-    # stable hint instead. Keeping them out also keeps this query off the slow path.
-    return out
-
-
-def run_audience(payload: dict) -> dict:
-    """Execute stats + preview rows for the given filters and return a result dict."""
-    where, params = build_filters(payload)
-    where_sql = _where_sql(where)
-
-    stats_sql = f"""select
-    count(*)                                                          as audience_count,
-    count(*) filter (where (email is not null and email <> '')
-                        or (phone_number is not null and phone_number <> '')) as reachable_count,
-    coalesce(avg(lifetime_revenue), 0)                               as avg_value,
-    coalesce(sum(lifetime_revenue), 0)                               as total_value
-from {TABLE}{where_sql}"""
-    stats = run_query(stats_sql, params)[0]
-
-    from .facets import get_facets  # cached; base customer count never changes in-process
-    base = get_facets()["baseCount"]
-
-    rows_sql = f"""select
+def _fetch_preview_rows(ids: list[int]) -> list[dict]:
+    """Fetch display detail for the given customer_ids and return them in `ids`
+    order (most-recent-first, as chosen in-memory). One indexed lookup of ≤200
+    ids — the only DB round-trip per audience query now that filtering, stats and
+    facet counts are computed from the in-memory snapshot."""
+    if not ids:
+        return []
+    sql = f"""select
     customer_id,
     name,
     {CITY_EXPR}            as city,
@@ -346,23 +245,41 @@ from {TABLE}{where_sql}"""
     (email is not null and email <> '')        as has_email,
     (phone_number is not null and phone_number <> '') as has_mobile,
     is_repeat_customer
-from {TABLE}{where_sql}
-order by lifetime_revenue desc nulls last
-limit {ROW_LIMIT}"""
-    rows = run_query(rows_sql, params)
+from {TABLE}
+where customer_id = any(:ids)"""
+    by_id = {r["customer_id"]: r for r in run_query(sql, {"ids": ids})}
+    return [_present_row(by_id[i]) for i in ids if i in by_id]
 
-    audience = int(stats["audience_count"] or 0)
+
+def run_audience(payload: dict) -> dict:
+    """Stats + preview rows + facet counts for the given filters.
+
+    Filtering, stats and facet counts come from the in-memory snapshot (no
+    per-keystroke warehouse scans); only the ≤200 preview detail rows are fetched
+    from the warehouse, by id. The displayed copy-paste SQL still comes from
+    build_display_sql, so it stays an accurate description of the equivalent query.
+    """
+    from . import snapshot  # lazy: snapshot imports from this module
+
+    snap = snapshot.get_snapshot()
+    mask = snap.match_mask(payload)
+    stats = snap.stats(mask)
+    audience = stats["audienceCount"]
+
+    rows = _fetch_preview_rows(snap.top_ids(mask, ROW_LIMIT))
+    base = snap.n
+
     return {
         "audienceCount": audience,
-        "reachCount": int(stats["reachable_count"] or 0),
-        "avgValue": float(stats["avg_value"] or 0),
-        "totalValue": float(stats["total_value"] or 0),
+        "reachCount": stats["reachCount"],
+        "avgValue": stats["avgValue"],
+        "totalValue": stats["totalValue"],
         "baseCount": int(base or 0),
         "pctBase": (audience / base * 100.0) if base else 0.0,
-        "rows": [_present_row(r) for r in rows],
+        "rows": rows,
         "sql": build_display_sql(payload),
         "limited": audience > ROW_LIMIT,
-        "facetCounts": facet_counts(payload),
+        "facetCounts": snap.facet_counts(payload),
     }
 
 
@@ -411,4 +328,4 @@ select
     is_member,
     is_repeat_customer
 from {TABLE}{where_sql}
-order by lifetime_revenue desc nulls last;"""
+order by last_completed_job desc nulls last;"""

@@ -11,6 +11,8 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 import threading
 
+from . import audiences as audiences_store
+from . import servicetitan
 from .audience_query import run_audience
 from .export import build_xlsx, stream_csv
 from .facets import get_facets, get_tag_facets
@@ -88,18 +90,65 @@ def export():
         return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
-# Warm the (slow) tag-facet cache in the background at import time so the first
-# /api/tags request is usually instant. Best-effort: failures just mean the first
-# real request computes it lazily.
-def _warm_caches():
+# ---- Saved audiences (PROTOTYPE: mock store, see app/audiences.py) -------------
+@app.get("/api/audiences")
+def list_audiences():
     try:
-        get_facets()
-        get_tag_facets()
-    except Exception:
-        pass
+        return jsonify({"audiences": audiences_store.list_audiences()})
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
-threading.Thread(target=_warm_caches, daemon=True).start()
+@app.post("/api/audiences")
+def save_audience():
+    body = request.get_json(silent=True) or {}
+    name = body.get("name") or ""
+    filters = body.get("filters") or {}
+    try:
+        return jsonify(audiences_store.save_audience(name, filters))
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
+# ---- ServiceTitan tag write-back (PROTOTYPE: mock client, prints payload) -------
+@app.post("/api/tags/apply")
+def apply_tag():
+    body = request.get_json(silent=True) or {}
+    filters = body.get("filters") or {}
+    tag = (body.get("tag") or "").strip()
+    if not tag:
+        return jsonify({"error": "A tag name is required."}), 400
+    try:
+        # Resolve the FULL matched audience (not the 200-row preview) from the snapshot.
+        from . import snapshot
+        snap = snapshot.get_snapshot()
+        ids = snap.matched_ids(snap.match_mask(filters))
+        if not ids:
+            return jsonify({"error": "No customers match these filters."}), 400
+        result = servicetitan.apply_customer_tag(tag, ids)
+        return jsonify({
+            "ok": True,
+            "count": result["wouldTag"],
+            "message": f"Would tag {result['wouldTag']:,} customers with '{tag}' "
+                       f"— payload logged to the server console (mock, no API call made).",
+        })
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
+# Build the in-memory snapshot at startup (in the background so import never
+# blocks on the warehouse) and schedule a daily rebuild. Every query path — facets,
+# tags, audience filtering — reads from this snapshot. Best-effort: a failed build
+# is retried lazily on the first request.
+#
+# NOTE (ops): the snapshot lives per-process, so run a single gunicorn worker with
+# multiple threads, or use --preload, rather than N workers each holding a copy.
+def _start_snapshot():
+    from .snapshot import start_background_refresh
+    start_background_refresh()
+
+
+threading.Thread(target=_start_snapshot, daemon=True).start()
 
 
 if __name__ == "__main__":

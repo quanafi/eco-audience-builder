@@ -19,7 +19,6 @@
         <div class="hdr-sub">Marketing Segmentation</div>
       </div>
     </div>
-    <div class="ro-pill"><span class="ro-dot"></span>Live · read-only</div>
   </header>
   <div class="brandbar"></div>
 
@@ -74,6 +73,48 @@
           <div class="tabs">
             <button type="button" class="tab tab-on" id="tabPreview">Audience preview</button>
             <button type="button" class="tab" id="tabSql">Generated SQL</button>
+            <div class="card-actions">
+            <div class="save-wrap">
+              <button type="button" class="btn-export" id="savedBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                Saved
+              </button>
+              <div class="export-panel" id="savedPanel" hidden>
+                <div class="export-head">Saved audiences</div>
+                <div class="export-row">
+                  <span class="export-lbl">Save current segment</span>
+                  <div class="save-new">
+                    <input class="fin" type="text" id="saveName" autocomplete="off" placeholder="Name this audience…">
+                    <button type="button" class="btn-download" id="saveBtn">Save</button>
+                  </div>
+                </div>
+                <div class="export-row">
+                  <span class="export-lbl">Load saved</span>
+                  <div class="saved-list" id="savedList"></div>
+                </div>
+                <div class="export-foot" id="savedFoot" hidden>
+                  <span class="export-note" id="savedNote"></span>
+                </div>
+              </div>
+            </div>
+            <div class="tagst-wrap">
+              <button type="button" class="btn-export" id="tagstBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                Tag
+              </button>
+              <div class="export-panel" id="tagstPanel" hidden>
+                <div class="export-head">Tag in ServiceTitan</div>
+                <div class="export-row">
+                  <span class="export-lbl">Tag name</span>
+                  <input class="fin" type="text" id="tagstName" autocomplete="off" placeholder="e.g. Spring 2026 Campaign">
+                </div>
+                <div class="tagst-target" id="tagstTarget"></div>
+                <div class="export-foot">
+                  <span class="export-note" id="tagstNote"></span>
+                  <button type="button" class="btn-download" id="tagstApply">Apply tag</button>
+                </div>
+              </div>
+            </div>
             <div class="export-wrap">
               <button type="button" class="btn-export" id="exportBtn">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -97,6 +138,7 @@
                   <button type="button" class="btn-download" id="exportDownload">Download</button>
                 </div>
               </div>
+            </div>
             </div>
           </div>
 
