@@ -814,6 +814,12 @@ async function init() {
     if (f.error) { showError(f.error); return; }
     state.facets = f;
     $('baseCount').textContent = fmtInt(f.baseCount) + ' customers';
+    const sup = $('suppressNote');
+    if (sup) {
+      sup.textContent = f.suppressedCount
+        ? fmtInt(f.suppressedCount) + ' customers removed for do-not-contact opt-outs and never appear in any audience.'
+        : '';
+    }
     buildFilters();
     runQuery();
 

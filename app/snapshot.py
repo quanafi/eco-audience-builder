@@ -90,6 +90,7 @@ class Snapshot:
         segments: dict[str, np.ndarray],
         tag_index: dict[str, np.ndarray],
         available_suppress: set[str] | None = None,
+        suppressed_count: int = 0,
     ):
         self.customer_id = customer_id
         self.n = len(customer_id)
@@ -106,6 +107,9 @@ class Snapshot:
         # of do-not-contact channels whose columns really exist in the mart — kept only
         # to gate the generated SQL (display + export) to columns that exist.
         self.available_suppress = available_suppress or set()
+        # Count of opted-out customers excluded at load (not in the snapshot). Surfaced
+        # in base_facets so the UI can report how many were removed by do-not-contact.
+        self.suppressed_count = suppressed_count
         self._all_true = np.ones(self.n, dtype=bool)
         # tag -> precomputed boolean membership column (built lazily, cached).
         self._tag_mask_cache: dict[str, np.ndarray] = {}
@@ -161,6 +165,13 @@ class Snapshot:
             from {TABLE}
             where not ({dnm}) and not ({dns}) and not ({dnt})"""
         )
+        # How many customers the always-on suppression removed (any opt-out channel).
+        # When no do-not-* columns exist the predicates are all literal `false`, so 0.
+        supp = run_query(
+            f"select count(*) as n from {TABLE} "
+            f"where ({dnm}) or ({dns}) or ({dnt})"
+        )
+        suppressed_count = int(supp[0]["n"])
 
         n = len(rows)
         customer_id = np.empty(n, dtype=np.int64)
@@ -201,7 +212,8 @@ class Snapshot:
 
         tag_index = cls._load_tag_index(id_to_row, n)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index, available_suppress)
+                   revenue, zips, segments, tag_index, available_suppress,
+                   suppressed_count)
 
     @staticmethod
     def _flag_masks_from(cols_bool: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -247,6 +259,10 @@ class Snapshot:
         Mirrors from_warehouse: opted-out customers (any do_not_* flag set) are
         dropped up front, so the snapshot only holds contactable customers.
         """
+        suppressed_count = sum(
+            1 for r in rows
+            if (r.get("do_not_mail") or r.get("do_not_service") or r.get("do_not_text"))
+        )
         rows = [
             r for r in rows
             if not (r.get("do_not_mail") or r.get("do_not_service") or r.get("do_not_text"))
@@ -293,7 +309,8 @@ class Snapshot:
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index, set(_SUPPRESS_SOURCE))
+                   revenue, zips, segments, tag_index, set(_SUPPRESS_SOURCE),
+                   suppressed_count)
 
     # --------------------------------------------------------------- filtering
     def _tag_mask(self, tag: str) -> np.ndarray:
@@ -393,13 +410,12 @@ class Snapshot:
         return {"audienceCount": audience, "reachCount": reach, "avgValue": avg, "totalValue": total}
 
     def top_ids(self, mask: np.ndarray, limit: int) -> list[int]:
-        """customer_ids of matched rows, most-recent first (days asc, nulls last),
-        equivalent to `order by last_completed_job desc nulls last limit N`."""
+        """customer_ids of matched rows, ascending by customer_id,
+        equivalent to `order by customer_id asc limit N`."""
         idx = np.flatnonzero(mask)
         if idx.size == 0:
             return []
-        keys = np.where(np.isnan(self.days[idx]), np.inf, self.days[idx])
-        order = idx[np.argsort(keys, kind="stable")][:limit]
+        order = idx[np.argsort(self.customer_id[idx], kind="stable")][:limit]
         return [int(c) for c in self.customer_id[order]]
 
     def matched_ids(self, mask: np.ndarray) -> list[int]:
@@ -459,7 +475,9 @@ class Snapshot:
             "flags": {name: int(m.sum()) for name, m in self.flag_masks.items()},
             # Do-not-contact suppression is always-on: opted-out customers are filtered
             # out at load (from_warehouse / from_rows), so they're not in the snapshot
-            # at all and suppression is not a user-facing facet.
+            # at all and suppression is not a user-selectable facet. We do report the
+            # *count* removed so the UI can show how many opt-outs were excluded.
+            "suppressedCount": self.suppressed_count,
         }
 
     def tag_facets(self) -> list[dict]:

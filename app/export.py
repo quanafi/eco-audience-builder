@@ -120,7 +120,7 @@ def _build_query(columns: list[str], filters: dict) -> tuple[str, dict]:
     where, params = build_filters(filters or {}, available)
     where_sql = _where_sql(where)
     select_list = ",\n    ".join(f"{COLUMN_CATALOG[c][1]} as {c}" for c in columns)
-    sql = build_select(select_list, where_sql, order_by="last_completed_job desc nulls last")
+    sql = build_select(select_list, where_sql, order_by="customer_id asc")
     return sql, params
 
 

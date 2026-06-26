@@ -187,9 +187,12 @@ def test_base_facets_count_only_contactable_customers():
     snap = _suppress_snap()
     bf = snap.base_facets()
     assert bf["baseCount"] == 1
-    # Suppression is no longer a user-facing facet.
+    # Suppression is not a user-selectable facet, but the count removed is reported.
     assert "suppress" not in bf
     assert "suppressAvailable" not in bf
+    # 3 of the 4 rows opted out of some channel.
+    assert snap.suppressed_count == 3
+    assert bf["suppressedCount"] == 3
 
 
 # --- stats -----------------------------------------------------------------
@@ -215,12 +218,12 @@ def test_stats_empty_mask_is_zeroed():
 
 # --- top_ids ordering ------------------------------------------------------
 
-def test_top_ids_most_recent_first_nulls_last():
+def test_top_ids_ascending_customer_id():
     snap = build()
     mask = snap.match_mask({})
-    # days: 4->5, 1->10, 2->100, 3->null  => order 4,1,2,3
-    assert snap.top_ids(mask, 10) == [4, 1, 2, 3]
-    assert snap.top_ids(mask, 2) == [4, 1]
+    # ordered by customer_id ascending
+    assert snap.top_ids(mask, 10) == [1, 2, 3, 4]
+    assert snap.top_ids(mask, 2) == [1, 2]
 
 
 # --- facet counts ----------------------------------------------------------
@@ -246,6 +249,7 @@ def test_base_facets_totals():
     snap = build()
     bf = snap.base_facets()
     assert bf["baseCount"] == 4
+    assert bf["suppressedCount"] == 0  # build() has no opt-outs
     assert {o["value"]: o["count"] for o in bf["trades"]} == {"Plumbing": 2, "HVAC": 2, "Electric": 1}
     assert bf["flags"]["is_member"] == 2
     rev_seg = {o["value"]: o["count"] for o in bf["segments"]["revenueSegments"]}

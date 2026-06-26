@@ -103,4 +103,4 @@ def test_build_query_gates_on_available_suppress(monkeypatch):
     sql, params = export._build_query(["customer_id"], {})
     assert "from edw2.customers" in sql
     assert "do_not_mail" in sql               # suppression gated in because column is available
-    assert "order by last_completed_job desc nulls last" in sql
+    assert "order by customer_id asc" in sql

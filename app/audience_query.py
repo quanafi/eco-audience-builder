@@ -306,7 +306,7 @@ def build_select(select_list: str, where_sql: str = "", order_by: str | None = N
 
 def _fetch_preview_rows(ids: list[int]) -> list[dict]:
     """Fetch display detail for the given customer_ids and return them in `ids`
-    order (most-recent-first, as chosen in-memory). One indexed lookup of ≤200
+    order (ascending customer_id, as chosen in-memory). One indexed lookup of ≤200
     ids — the only DB round-trip per audience query now that filtering, stats and
     facet counts are computed from the in-memory snapshot."""
     if not ids:
@@ -409,4 +409,4 @@ select
     is_member,
     is_repeat_customer
 from {TABLE}{where_sql}
-order by last_completed_job desc nulls last;"""
+order by customer_id asc;"""
