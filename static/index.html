@@ -139,6 +139,30 @@
                 </div>
               </div>
             </div>
+            <div class="ads-wrap">
+              <button type="button" class="btn-export" id="adsBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                Send to Ads
+              </button>
+              <div class="export-panel" id="adsPanel" hidden>
+                <div class="export-head">Send to ad platform <span class="ads-mode" id="adsMode">Dry run</span></div>
+                <div class="export-row">
+                  <span class="export-lbl">Platform</span>
+                  <div class="export-fmt">
+                    <label><input type="radio" name="adsplatform" value="google" checked> Google Ads</label>
+                    <label><input type="radio" name="adsplatform" value="meta"> Meta Ads</label>
+                  </div>
+                </div>
+                <div class="ads-estimate" id="adsEstimate">
+                  <div class="ads-hint">Estimate the predicted customer match rate before uploading.</div>
+                </div>
+                <div class="export-foot">
+                  <span class="export-note" id="adsNote"></span>
+                  <button type="button" class="btn-ghost" id="adsEstimateBtn">Estimate</button>
+                  <button type="button" class="btn-download" id="adsSend">Dry-run send</button>
+                </div>
+              </div>
+            </div>
             </div>
           </div>
 

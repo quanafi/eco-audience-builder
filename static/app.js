@@ -25,6 +25,8 @@ const FLAGS = [
   { f: 'has_mobile', label: 'Has mobile' },
   { f: 'is_repeat_customer', label: 'Repeat customer' },
 ];
+// Do-not-contact customers are excluded globally and always (server-side), so there
+// is no suppression UI — opted-out customers never appear in any audience.
 const SEGMENT_GROUPS = [
   { key: 'revenueSegments', label: 'Lifetime revenue tier' },
   { key: 'frequencySegments', label: 'Visit frequency' },
@@ -370,6 +372,7 @@ function setPayload(s) {
 function payload() {
   // Include fields at the top level (back-compat with /api/audience); exclude nested.
   // `mode` tells the backend which set's chips to compute live facet counts for.
+  // (Do-not-contact suppression is applied globally server-side, not sent here.)
   return { ...setPayload(state.sets.include), exclude: setPayload(state.sets.exclude), mode: state.mode };
 }
 
@@ -675,6 +678,72 @@ async function doApplyTag() {
   }
 }
 
+// ---------------------------------------------------------------- send to ads
+// PROTOTYPE: the server hashes PII and logs the platform payload instead of calling
+// Google/Meta (app/ads.py, dry-run). "Estimate" predicts a match-rate range from
+// identifier coverage — clearly labeled as an estimate, not a platform-reported rate.
+function setupAds() {
+  setupDropdown('adsBtn', 'adsPanel');
+  $('adsEstimateBtn').addEventListener('click', doAdsEstimate);
+  $('adsSend').addEventListener('click', doAdsSend);
+}
+
+function adsPlatform() {
+  return document.querySelector('input[name="adsplatform"]:checked').value;
+}
+
+async function doAdsEstimate() {
+  const platform = adsPlatform();
+  const box = $('adsEstimate');
+  box.innerHTML = '<div class="ads-hint">Estimating…</div>';
+  $('adsNote').textContent = '';
+  try {
+    const res = await fetch('/api/ads/estimate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: payload(), platforms: [platform] }),
+    });
+    const d = await res.json();
+    if (d.error) { box.innerHTML = `<div class="ads-hint">${esc(d.error)}</div>`; return; }
+    renderAdsEstimate(d, platform);
+  } catch (e) {
+    box.innerHTML = `<div class="ads-hint">${esc(String(e))}</div>`;
+  }
+}
+
+function renderAdsEstimate(d, platform) {
+  const c = d.coverage || {};
+  const p = (d.platforms && d.platforms[platform]) || {};
+  const cov = (label, n) => `<div class="ads-cov"><span>${label}</span><b>${fmtInt(n)}</b></div>`;
+  $('adsEstimate').innerHTML =
+    `<div class="ads-rate">${(p.lowPct || 0).toFixed(1)}–${(p.highPct || 0).toFixed(1)}%` +
+    `<span class="ads-rate-sub">predicted match (${fmtInt(p.lowCount || 0)}–${fmtInt(p.highCount || 0)} of ${fmtInt(c.total || 0)})</span></div>` +
+    `<div class="ads-covs">` +
+    cov('Email', c.hasEmail || 0) + cov('Phone', c.hasPhone || 0) +
+    cov('Name + ZIP', c.hasNameZip || 0) + cov('Any identifier', c.hasAnyIdentifier || 0) +
+    `</div>` +
+    `<div class="ads-disclaimer">${esc(p.disclaimer || '')}</div>`;
+}
+
+async function doAdsSend() {
+  const platform = adsPlatform();
+  const note = $('adsNote');
+  const show = (msg, ok) => { note.className = ok ? 'export-note ok' : 'export-note'; note.textContent = msg; };
+  const btn = $('adsSend'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sending…'; note.textContent = '';
+  try {
+    const res = await fetch('/api/ads/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: payload(), platform }),
+    });
+    const data = await res.json();
+    show(data.error || data.message || 'Done.', !data.error);
+  } catch (e) {
+    show(String(e), false);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
 async function doExport() {
   const columns = Array.from($('exportCols').querySelectorAll('input:checked')).map((i) => i.value);
   if (!columns.length) { $('exportNote').textContent = 'Pick at least one column.'; return; }
@@ -717,6 +786,7 @@ async function init() {
   setupExport();
   setupSaved();
   setupTag();
+  setupAds();
   document.addEventListener('click', closeAllDropdowns);   // click outside closes any open panel
   $('copySql').addEventListener('click', () => {
     navigator.clipboard.writeText(state.sql).catch(() => {});

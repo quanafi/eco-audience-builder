@@ -193,6 +193,42 @@ def test_exclude_negated_in_display_sql():
     assert "not ((hvac_customer = 1))" in sql
 
 
+# --- do-not-contact suppression (always-on, gated on available columns) ----
+# Suppression is no longer driven by the payload — every available channel is always
+# excluded. `available` (snapshot.available_suppress) gates which clauses are emitted;
+# `available=None` (no snapshot context) emits nothing, keeping direct callers
+# payload-only.
+
+def test_suppress_emits_all_available_channels_regardless_of_payload():
+    where, params = aq.build_filters({}, available={"do_not_mail", "do_not_text"})
+    assert "not (do_not_mail is true)" in where
+    assert "not ((do_not_text_numbers is not null and do_not_text_numbers <> ''))" in where
+    assert params == {}  # suppressions are constant SQL, no binds
+
+
+def test_suppress_keeps_canonical_order():
+    where, _ = aq.build_filters({}, available={"do_not_service", "do_not_mail"})
+    assert where == ["not (do_not_mail is true)", "not (do_not_service is true)"]
+
+
+def test_suppress_none_available_produces_no_clause():
+    # No snapshot context (available=None) -> builder stays payload-only.
+    where, params = aq.build_filters({})
+    assert where == []
+    assert params == {}
+
+
+def test_suppress_empty_available_produces_no_clause():
+    where, params = aq.build_filters({}, available=set())
+    assert where == []
+    assert params == {}
+
+
+def test_suppress_rendered_in_display_sql():
+    sql = aq.build_display_sql({}, available={"do_not_service"})
+    assert "not (do_not_service is true)" in sql
+
+
 # --- combined: include + exclude stays internally consistent ---------------
 
 def test_kitchen_sink_payload_is_consistent():

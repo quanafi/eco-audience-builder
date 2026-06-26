@@ -11,6 +11,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 import threading
 
+from . import ads
 from . import audiences as audiences_store
 from . import servicetitan
 from .audience_query import run_audience
@@ -131,6 +132,45 @@ def apply_tag():
             "count": result["wouldTag"],
             "message": f"Would tag {result['wouldTag']:,} customers with '{tag}' "
                        f"— payload logged to the server console (mock, no API call made).",
+        })
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
+# ---- Ad platforms (PROTOTYPE: dry-run mock, see app/ads.py) --------------------
+@app.post("/api/ads/estimate")
+def ads_estimate():
+    body = request.get_json(silent=True) or {}
+    filters = body.get("filters") or {}
+    platforms = body.get("platforms") or list(ads.PLATFORMS)
+    try:
+        return jsonify(ads.estimate(filters, platforms))
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
+@app.post("/api/ads/send")
+def ads_send():
+    body = request.get_json(silent=True) or {}
+    filters = body.get("filters") or {}
+    platform = (body.get("platform") or "").lower()
+    if platform not in ads.PLATFORMS:
+        return jsonify({"error": "platform must be 'google' or 'meta'."}), 400
+    try:
+        customers = ads.fetch_pii(filters)
+        if not customers:
+            return jsonify({"error": "No customers match these filters."}), 400
+        result = ads.send_audience(platform, customers)
+        label = "Google Ads" if platform == "google" else "Meta Ads"
+        verb = "Dry run: would upload" if result["dryRun"] else "Uploaded"
+        return jsonify({
+            "ok": True,
+            "platform": platform,
+            "count": result["wouldSend"],
+            "dryRun": result["dryRun"],
+            "message": f"{verb} {result['wouldSend']:,} hashed records to {label} "
+                       f"— payload logged to the server console (mock, no API call, "
+                       f"no data left this server).",
         })
     except Exception as exc:
         return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500

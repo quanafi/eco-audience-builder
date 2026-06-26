@@ -22,6 +22,7 @@ _DEFAULTS = {
     "days_since_last_job": None, "lifetime_revenue": None, "address": None,
     "lifetime_revenue_segment": None, "frequency_segment": None,
     "paid_recency_segment": None, "has_email": False, "has_mobile": False,
+    "do_not_mail": False, "do_not_service": False, "do_not_text": False,
 }
 
 
@@ -152,6 +153,43 @@ def test_include_and_exclude_combined():
     snap = build()
     # Plumbing include {1,4}, exclude tag VIP {1,4} -> empty
     assert ids(snap, snap.match_mask({"trades": ["Plumbing"], "exclude": {"tags": ["VIP"]}})) == []
+
+
+# --- do-not-contact suppression (always-on baseline exclusion) -------------
+# Opted-out customers are filtered out at load (from_warehouse / from_rows), so they
+# never enter the snapshot — they can't appear in any count, preview or facet,
+# regardless of the payload.
+
+def _suppress_snap():
+    rows = [
+        row(1),                       # contactable on every channel
+        row(2, do_not_mail=True),     # opted out of mail
+        row(3, do_not_text=True),     # opted out of text
+        row(4, do_not_service=True),  # do-not-service
+    ]
+    return Snapshot.from_rows(rows)
+
+
+def test_opted_out_customers_never_enter_the_snapshot():
+    snap = _suppress_snap()
+    assert snap.n == 1
+    assert ids(snap, snap.match_mask({})) == [1]
+
+
+def test_payload_cannot_resurrect_opted_out_customers():
+    # An empty payload matches "everyone", but everyone here is just the one
+    # contactable customer — opt-outs were already excluded at load.
+    snap = _suppress_snap()
+    assert ids(snap, snap.match_mask({"trades": [], "exclude": {}})) == [1]
+
+
+def test_base_facets_count_only_contactable_customers():
+    snap = _suppress_snap()
+    bf = snap.base_facets()
+    assert bf["baseCount"] == 1
+    # Suppression is no longer a user-facing facet.
+    assert "suppress" not in bf
+    assert "suppressAvailable" not in bf
 
 
 # --- stats -----------------------------------------------------------------

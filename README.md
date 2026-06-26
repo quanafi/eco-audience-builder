@@ -18,6 +18,10 @@ ServiceTitan-derived, ~325K customers). Every query is **SELECT-only**.
   - `POST /api/audience` — builds a parameterized SELECT from the filter payload,
     returns audience size, reachability, avg lifetime value, the top 200 matches,
     and the generated SQL.
+  - `POST /api/ads/estimate` / `POST /api/ads/send` — predict a Google Ads / Meta
+    customer-match rate and (dry-run) push the audience. **Prototype**: PII is
+    SHA-256 hashed into the exact payload each platform expects and logged, never
+    uploaded, until creds are configured (`app/ads.py`, `ADS_DRY_RUN` defaults on).
   - `db.py` refuses anything that is not `SELECT`/`WITH`.
 - **`skills/eco-edw-querying/`** — the warehouse semantics playbook (DBT layering,
   table map, time-column pitfalls) used to choose the right columns. The source of
@@ -34,6 +38,11 @@ ServiceTitan-derived, ~325K customers). Every query is **SELECT-only**.
 | Lifetime spend | `lifetime_revenue` |
 | Segments | `lifetime_revenue_segment`, `frequency_segment`, `paid_recency_segment` |
 | Reachability | `email`, `phone_number`, `is_member`, `is_repeat_customer` |
+
+Do-not-contact customers (`do_not_mail`, `do_not_text_numbers`, `do_not_service`) are
+**always excluded** — filtered out of the snapshot at load, so they never appear in
+any count, preview, export or ad audience. It is not a user-facing filter: this app
+exists to contact people. (No email opt-out exists in the source.)
 
 City/ZIP/state in the preview table are parsed out of `address` (`street , City, OH 43215`).
 

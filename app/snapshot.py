@@ -34,6 +34,21 @@ from .audience_query import (
 )
 from .db import run_query
 
+# Mart column each "do not contact" suppression key reads. do_not_text derives a
+# boolean from the comma-joined do_not_text_numbers list (non-empty => opted out).
+# These columns may not exist in the mart yet; from_warehouse probes for them and
+# falls back to a constant so a pre-migration warehouse still loads.
+#
+# Suppression is an always-on baseline exclusion: opted-out customers are filtered
+# out at load time (from_warehouse) so they never enter the snapshot — they don't
+# appear in any count, preview, facet, export or ad audience. `available_suppress`
+# is kept only to gate the generated SQL (display + export) to columns that exist.
+_SUPPRESS_SOURCE = {
+    "do_not_mail": "do_not_mail",
+    "do_not_text": "do_not_text_numbers",
+    "do_not_service": "do_not_service",
+}
+
 # Python port of audience_query.ZIP_EXPR: a trailing 5-digit ZIP, optional +4.
 _ZIP_RE = re.compile(r"(\d{5})(?:-\d{4})?\s*$")
 
@@ -71,6 +86,7 @@ class Snapshot:
         zips: np.ndarray,
         segments: dict[str, np.ndarray],
         tag_index: dict[str, np.ndarray],
+        available_suppress: set[str] | None = None,
     ):
         self.customer_id = customer_id
         self.n = len(customer_id)
@@ -82,14 +98,41 @@ class Snapshot:
         self.zips = zips
         self.segments = segments
         self.tag_index = tag_index
+        # Opted-out customers are already filtered out at load (from_warehouse), so the
+        # snapshot only holds contactable customers. `available_suppress` is the subset
+        # of do-not-contact channels whose columns really exist in the mart — kept only
+        # to gate the generated SQL (display + export) to columns that exist.
+        self.available_suppress = available_suppress or set()
         self._all_true = np.ones(self.n, dtype=bool)
         # tag -> precomputed boolean membership column (built lazily, cached).
         self._tag_mask_cache: dict[str, np.ndarray] = {}
 
     # ----------------------------------------------------------------- builders
+    @staticmethod
+    def _mart_columns() -> set[str]:
+        """Column names present in the customer mart, for probing optional columns."""
+        schema, _, name = TABLE.partition(".")
+        rows = run_query(
+            "select column_name from information_schema.columns "
+            "where table_schema = :schema and table_name = :name",
+            {"schema": schema, "name": name},
+        )
+        return {r["column_name"] for r in rows}
+
     @classmethod
     def from_warehouse(cls) -> "Snapshot":
         """Load the snapshot with two read-only queries (customers + job tags)."""
+        present = cls._mart_columns()
+        available_suppress = {k for k, col in _SUPPRESS_SOURCE.items() if col in present}
+        # Per-key SQL expression, falling back to a constant when the backing column
+        # isn't in the mart yet, so a pre-migration warehouse still loads. Each yields
+        # a boolean: TRUE => the customer opted out of that channel.
+        dnm = "do_not_mail is true" if "do_not_mail" in present else "false"
+        dns = "do_not_service is true" if "do_not_service" in present else "false"
+        dnt = (
+            "(do_not_text_numbers is not null and do_not_text_numbers <> '')"
+            if "do_not_text_numbers" in present else "false"
+        )
         rows = run_query(
             f"""select
                 customer_id,
@@ -110,7 +153,8 @@ class Snapshot:
                 paid_recency_segment,
                 (email is not null and email <> '')               as has_email,
                 (phone_number is not null and phone_number <> '') as has_mobile
-            from {TABLE}"""
+            from {TABLE}
+            where not ({dnm}) and not ({dns}) and not ({dnt})"""
         )
 
         n = len(rows)
@@ -152,7 +196,7 @@ class Snapshot:
 
         tag_index = cls._load_tag_index(id_to_row, n)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index)
+                   revenue, zips, segments, tag_index, available_suppress)
 
     @staticmethod
     def _flag_masks_from(cols_bool: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -191,9 +235,17 @@ class Snapshot:
 
         `rows`: dicts with the same keys the warehouse query produces (flags as
         0/1 or bool, days_since_last_job / lifetime_revenue possibly None, address,
-        the three segment columns, has_email / has_mobile). `tag_rows`: dicts with
-        {customer_id, tag} (already distinct per pair).
+        the three segment columns, has_email / has_mobile, plus the optional
+        do_not_mail / do_not_service / do_not_text opt-out flags). `tag_rows`: dicts
+        with {customer_id, tag} (already distinct per pair).
+
+        Mirrors from_warehouse: opted-out customers (any do_not_* flag set) are
+        dropped up front, so the snapshot only holds contactable customers.
         """
+        rows = [
+            r for r in rows
+            if not (r.get("do_not_mail") or r.get("do_not_service") or r.get("do_not_text"))
+        ]
         n = len(rows)
         customer_id = np.array([int(r["customer_id"]) for r in rows], dtype=np.int64)
 
@@ -236,7 +288,7 @@ class Snapshot:
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
-                   revenue, zips, segments, tag_index)
+                   revenue, zips, segments, tag_index, set(_SUPPRESS_SOURCE))
 
     # --------------------------------------------------------------- filtering
     def _tag_mask(self, tag: str) -> np.ndarray:
@@ -322,6 +374,8 @@ class Snapshot:
             mask &= truth
         for truth, known in self._clauses(payload.get("exclude") or {}):
             mask &= known & ~truth
+        # Do-not-contact suppression is applied at load time (opted-out customers are
+        # never in the snapshot), so there is nothing to mask here.
         return mask
 
     def stats(self, mask: np.ndarray) -> dict:
