@@ -23,6 +23,7 @@ from .audience_query import (
     TABLE,
     ZIP_EXPR,
     build_filters,
+    build_select,
     _where_sql,
 )
 from .db import stream_query
@@ -75,6 +76,19 @@ def _st_url(customer_id) -> str:
     return ST_CUSTOMER_URL.format(id=customer_id)
 
 
+# A text cell starting with one of these is interpreted as a formula by Excel/Google
+# Sheets — e.g. a customer name of "=cmd|..." or "+HYPERLINK(...)" would execute on open.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection by prefixing a risky leading character
+    with a single quote. Non-string values (ints, money, "Yes"/"No") pass through."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _resolve_columns(columns) -> list[str]:
     """Keep only known columns, ordered by the catalog (customer_id first)."""
     requested = set(columns or [])
@@ -106,11 +120,7 @@ def _build_query(columns: list[str], filters: dict) -> tuple[str, dict]:
     where, params = build_filters(filters or {}, available)
     where_sql = _where_sql(where)
     select_list = ",\n    ".join(f"{COLUMN_CATALOG[c][1]} as {c}" for c in columns)
-    sql = (
-        f"select\n    {select_list}\n"
-        f"from {TABLE}{where_sql}\n"
-        f"order by last_completed_job desc nulls last"
-    )
+    sql = build_select(select_list, where_sql, order_by="last_completed_job desc nulls last")
     return sql, params
 
 
@@ -138,7 +148,7 @@ def stream_csv(columns, filters: dict) -> Iterator[str]:
             if c == "customer_id" and v is not None:
                 out.append(f'=HYPERLINK("{_st_url(v)}","{v}")')
             else:
-                out.append(_format(COLUMN_CATALOG[c][2], v))
+                out.append(_csv_safe(_format(COLUMN_CATALOG[c][2], v)))
         writer.writerow(out)
         yield flush()
 
@@ -171,7 +181,7 @@ def build_xlsx(columns, filters: dict) -> bytes:
                 cell.font = link_font
                 cells.append(cell)
             else:
-                cells.append(_format(COLUMN_CATALOG[c][2], v))
+                cells.append(_csv_safe(_format(COLUMN_CATALOG[c][2], v)))
         ws.append(cells)
 
     bio = io.BytesIO()

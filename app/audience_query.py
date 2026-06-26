@@ -39,6 +39,20 @@ FLAGS = {
     "is_member": "is_member = 1",
     "is_repeat_customer": "is_repeat_customer = 1",
 }
+# FLAGS values are appended to the WHERE list verbatim — they bypass the value
+# renderer (_BindRenderer / _LiteralRenderer) — so they MUST be parameter-free
+# constant SQL. A future flag carrying a value must go through `render`, not here.
+assert all(":" not in expr for expr in FLAGS.values()), "FLAGS must be static, parameter-free SQL"
+
+# Human-readable labels for the flags, served to the frontend via /api/config so the
+# UI's flag list derives from this single source of truth instead of a hardcoded copy.
+# Order here is the display order in the UI.
+FLAG_LABELS = {
+    "is_member": "EcoFi member",
+    "has_email": "Has email",
+    "has_mobile": "Has mobile",
+    "is_repeat_customer": "Repeat customer",
+}
 # "Do not contact" suppressions. These are an *always-on baseline exclusion*, not a
 # user-selectable filter: this app exists to contact people, so anyone who opted out
 # is removed from the universe everywhere (audience counts, preview, displayed SQL,
@@ -62,6 +76,25 @@ SEGMENT_COLUMNS = {
     "frequencySegments": "frequency_segment",
     "recencySegments": "paid_recency_segment",
 }
+# UI display labels for each segment group, served via /api/config (single source).
+SEGMENT_GROUP_LABELS = {
+    "revenueSegments": "Lifetime revenue tier",
+    "frequencySegments": "Visit frequency",
+    "recencySegments": "Paid recency",
+}
+
+
+def filter_config() -> dict:
+    """Canonical filter vocabulary served to the frontend (GET /api/config) so the UI's
+    flag/segment/trade/region lists derive from the backend instead of hardcoded copies.
+    Trade/region/segment *values + counts* come from /api/facets; this carries the
+    keys + display labels."""
+    return {
+        "flags": [{"f": k, "label": FLAG_LABELS[k]} for k in FLAG_LABELS],
+        "trades": list(TRADES),
+        "regions": list(REGIONS),
+        "segmentGroups": [{"key": k, "label": SEGMENT_GROUP_LABELS[k]} for k in SEGMENT_COLUMNS],
+    }
 
 # SQL fragments parsed out of the free-text address.
 ZIP_EXPR = r"substring(address from '(\d{5})(?:-\d{4})?\s*$')"
@@ -262,6 +295,15 @@ def _where_sql(where: list[str]) -> str:
     return ("\nwhere " + "\n  and ".join(where)) if where else ""
 
 
+def build_select(select_list: str, where_sql: str = "", order_by: str | None = None) -> str:
+    """Assemble a SELECT against the customer mart. Shared by the preview-row query
+    and the export query so the `select ... from {TABLE} [where] [order by]` skeleton
+    stays identical; only the column list and clauses differ per caller.
+    `where_sql` is expected in the form _where_sql returns (leading newline)."""
+    order = f"\norder by {order_by}" if order_by else ""
+    return f"select\n    {select_list}\nfrom {TABLE}{where_sql}{order}"
+
+
 def _fetch_preview_rows(ids: list[int]) -> list[dict]:
     """Fetch display detail for the given customer_ids and return them in `ids`
     order (most-recent-first, as chosen in-memory). One indexed lookup of ≤200
@@ -269,8 +311,7 @@ def _fetch_preview_rows(ids: list[int]) -> list[dict]:
     facet counts are computed from the in-memory snapshot."""
     if not ids:
         return []
-    sql = f"""select
-    customer_id,
+    select_list = f"""customer_id,
     name,
     {CITY_EXPR}            as city,
     {ZIP_EXPR}             as zip,
@@ -284,9 +325,8 @@ def _fetch_preview_rows(ids: list[int]) -> list[dict]:
     is_member,
     (email is not null and email <> '')        as has_email,
     (phone_number is not null and phone_number <> '') as has_mobile,
-    is_repeat_customer
-from {TABLE}
-where customer_id = any(:ids)"""
+    is_repeat_customer"""
+    sql = build_select(select_list, "\nwhere customer_id = any(:ids)")
     by_id = {r["customer_id"]: r for r in run_query(sql, {"ids": ids})}
     return [_present_row(by_id[i]) for i in ids if i in by_id]
 

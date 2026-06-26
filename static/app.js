@@ -19,7 +19,10 @@ const SPEND_PRESETS = [
   { label: '$2.5k+', min: 2500 },
   { label: '$5k+', min: 5000 },
 ];
-const FLAGS = [
+// FLAGS and SEGMENT_GROUPS are populated from GET /api/config at init() so the UI's
+// vocabulary derives from the backend (app/audience_query.py) instead of drifting.
+// These literals are the fallback if /api/config can't be reached.
+let FLAGS = [
   { f: 'is_member', label: 'EcoFi member' },
   { f: 'has_email', label: 'Has email' },
   { f: 'has_mobile', label: 'Has mobile' },
@@ -27,7 +30,7 @@ const FLAGS = [
 ];
 // Do-not-contact customers are excluded globally and always (server-side), so there
 // is no suppression UI — opted-out customers never appear in any audience.
-const SEGMENT_GROUPS = [
+let SEGMENT_GROUPS = [
   { key: 'revenueSegments', label: 'Lifetime revenue tier' },
   { key: 'frequencySegments', label: 'Visit frequency' },
   { key: 'recencySegments', label: 'Paid recency' },
@@ -102,7 +105,6 @@ const state = {
   collapsed: {},                                     // section key -> false when user expands it (default collapsed)
   tab: 'preview', sql: '',
   lastCount: null,                                   // most recent audience count, for the tag panel
-  suppress: [],                                      // global do-not-contact suppressions (not per set)
 };
 
 // Preserve the tag list's scroll position across full filter re-renders.
@@ -154,7 +156,6 @@ function sectionActiveCount(key) {
     case 'segments': return s.revenueSegments.length + s.frequencySegments.length + s.recencySegments.length;
     case 'tags': return s.tags.length;
     case 'flags': return s.flags.length;
-    case 'suppress': return state.suppress.length;   // global, independent of the current set
     default: return 0;
   }
 }
@@ -247,19 +248,6 @@ function buildFilters() {
     FLAGS.map((x) => chip(x.label, s.flags.includes(x.f), cnt('flags', x.f, undefined))).join('') + `</div>`,
     { style: 'margin-bottom:6px' }));
 
-  // Do not contact — global suppressions that apply in both Include and Exclude
-  // modes. Counts are each channel's total flagged customers. Chips only appear for
-  // channels whose mart column exists; until then, a hint explains they're pending.
-  const supAvail = f.suppressAvailable || [];
-  const supCounts = f.suppress || {};
-  const supList = SUPPRESS.filter((x) => supAvail.includes(x.f));
-  const supBody = supList.length
-    ? `<div class="chips" data-group="suppress">` +
-      supList.map((x) => chip(x.label, state.suppress.includes(x.f), supCounts[x.f])).join('') + `</div>` +
-      `<div class="hint">Removes customers who opted out, in both Include and Exclude modes. No email opt-out exists in the data.</div>`
-    : `<div class="hint">Do-not-contact flags become available after the next customer-mart refresh.</div>`;
-  html.push(section('suppress', `${icon(ICONS.ban)}Do not contact`, supBody, { style: 'margin-bottom:6px' }));
-
   const tl = $('tagList');
   if (tl) _tagScroll = tl.scrollTop;          // remember scroll across the rebuild
   $('filters').innerHTML = html.join('');
@@ -284,8 +272,6 @@ function wireFilters(f) {
   // chip groups that map to value arrays
   const arrayGroups = { trades: f.trades.map((t) => t.value), regions: f.regions.map((r) => r.value) };
   for (const g of SEGMENT_GROUPS) arrayGroups[g.key] = (f.segments[g.key] || []).map((o) => o.value);
-  // Suppression chips, in the same order they're rendered (available channels only).
-  const supList = SUPPRESS.filter((x) => (f.suppressAvailable || []).includes(x.f));
 
   document.querySelectorAll('.chips[data-group]').forEach((box) => {
     const group = box.dataset.group;
@@ -293,7 +279,6 @@ function wireFilters(f) {
       btn.addEventListener('click', () => {
         const s = cur();
         if (group === 'flags') { toggle(s.flags, FLAGS[i].f); }
-        else if (group === 'suppress') { toggle(state.suppress, supList[i].f); }
         else if (group === 'spendPreset') {
           const p = SPEND_PRESETS[i];
           if (s.spendPreset === p.label) { s.spendPreset = null; s.spendMin = null; s.spendMax = null; }
@@ -365,7 +350,7 @@ function updateBadges() {
   setCnt('cntInclude', inc);
   setCnt('cntExclude', exc);
   const b = $('activeBadge');
-  const total = inc + exc + state.suppress.length;
+  const total = inc + exc;
   if (total > 0) { b.textContent = total + ' active'; b.hidden = false; } else { b.hidden = true; }
 }
 
@@ -439,7 +424,6 @@ function applyPayload(filters) {
   filters = filters || {};
   state.sets.include = setFromPayload(filters);
   state.sets.exclude = setFromPayload(filters.exclude || {});
-  state.suppress = [...(filters.suppress || [])];
   setMode(filters.mode === 'exclude' ? 'exclude' : 'include');
 }
 
@@ -554,7 +538,6 @@ function setTab(tab) {
 function clearAll() {
   state.sets.include = emptySet();
   state.sets.exclude = emptySet();
-  state.suppress = [];
   buildFilters(); refresh();
 }
 
@@ -814,6 +797,16 @@ async function init() {
     const b = $('copySql'); const t = b.textContent; b.textContent = 'Copied!';
     setTimeout(() => { b.textContent = t; }, 1400);
   });
+
+  // Filter vocabulary (flag/segment-group keys + labels) from the backend. Best-effort:
+  // on failure the hardcoded FLAGS/SEGMENT_GROUPS fallbacks above are used.
+  try {
+    const cfg = await (await fetch('/api/config')).json();
+    if (cfg && !cfg.error) {
+      if (Array.isArray(cfg.flags) && cfg.flags.length) FLAGS = cfg.flags;
+      if (Array.isArray(cfg.segmentGroups) && cfg.segmentGroups.length) SEGMENT_GROUPS = cfg.segmentGroups;
+    }
+  } catch (e) { /* keep fallbacks */ }
 
   try {
     const res = await fetch('/api/facets');

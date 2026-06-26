@@ -6,11 +6,15 @@ not a SELECT/WITH. The warehouse connection string comes from DATABASE_URL.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+# /* ... */ block comments (DOTALL so they can span lines).
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 
 @lru_cache(maxsize=1)
@@ -22,12 +26,33 @@ def get_engine() -> Engine:
     return create_engine(url, pool_size=5, max_overflow=5, pool_pre_ping=True)
 
 
+def _strip_comments(sql: str) -> str:
+    """Remove /* */ block comments and -- line comments.
+
+    Our executed queries never contain `--` or `/* */` inside string literals, so
+    stripping `--` to end-of-line (SQL comment semantics) is safe here and prevents a
+    comment from hiding a second statement.
+    """
+    sql = _BLOCK_COMMENT.sub(" ", sql)
+    out = []
+    for ln in sql.splitlines():
+        idx = ln.find("--")
+        out.append(ln if idx == -1 else ln[:idx])
+    return "\n".join(out)
+
+
 def _assert_read_only(sql: str) -> None:
-    lines = [
-        ln for ln in sql.splitlines()
-        if ln.strip() and not ln.strip().startswith("--")
-    ]
-    head = "\n".join(lines).lstrip().lower()
+    """Permit exactly one SELECT/WITH statement; reject everything else.
+
+    Guards against non-read statements, statements smuggled after a comment, and
+    multi-statement payloads (`select 1; delete ...`) — psycopg2 will happily run
+    every `;`-separated statement in one call.
+    """
+    cleaned = _strip_comments(sql)
+    statements = [s for s in cleaned.split(";") if s.strip()]
+    if len(statements) > 1:
+        raise ValueError("Only a single read-only statement is permitted.")
+    head = (statements[0] if statements else "").lstrip().lower()
     if not head.startswith(("select", "with")):
         raise ValueError("Only read-only SELECT/WITH queries are permitted.")
 

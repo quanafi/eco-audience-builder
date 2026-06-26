@@ -64,3 +64,11 @@ docker run -p 8080:8080 -e DATABASE_URL="postgresql://…" eco-audience-builder
 
 The image runs `gunicorn` and reads `DATABASE_URL` from the environment, so it drops
 straight onto Cloud Run (provide the connection string as an env var / secret).
+
+> **Ops note — the snapshot is per-process.** The in-memory customer snapshot lives in
+> each worker process and refreshes on its own daily timer. Run **one gunicorn worker
+> with multiple threads**, or use `--preload`, so you don't hold (and independently
+> refresh) N copies. For multi-worker or much larger data, externalize the snapshot to a
+> shared store (Redis/DuckDB). For higher confidence, a DB-executed parity test (running
+> one payload through both the SQL builder and the snapshot) would pin the two filter
+> paths even harder than the in-memory `tests/test_parity.py` does today.
