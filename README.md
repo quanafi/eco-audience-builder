@@ -38,6 +38,7 @@ ServiceTitan-derived, ~325K customers). Every query is **SELECT-only**.
 | Lifetime spend | `lifetime_revenue` |
 | Segments | `lifetime_revenue_segment`, `frequency_segment`, `paid_recency_segment` |
 | Reachability | `email`, `phone_number`, `is_member`, `is_repeat_customer` |
+| Do not contact | `do_not_mail`, `do_not_text_numbers`, `do_not_service` (suppress opted-out customers; no email opt-out exists in the source) |
 
 Do-not-contact customers (`do_not_mail`, `do_not_text_numbers`, `do_not_service`) are
 **always excluded** — filtered out of the snapshot at load, so they never appear in

@@ -26,6 +26,7 @@ from .audience_query import (
     JOBS_TABLE,
     REGIONS,
     SEGMENT_COLUMNS,
+    SUPPRESS,
     TABLE,
     TRADES,
     _as_list,
@@ -119,9 +120,31 @@ class Snapshot:
         )
         return {r["column_name"] for r in rows}
 
+    @staticmethod
+    def _mart_columns() -> set[str]:
+        """Column names present in the customer mart, for probing optional columns."""
+        schema, _, name = TABLE.partition(".")
+        rows = run_query(
+            "select column_name from information_schema.columns "
+            "where table_schema = :schema and table_name = :name",
+            {"schema": schema, "name": name},
+        )
+        return {r["column_name"] for r in rows}
+
     @classmethod
     def from_warehouse(cls) -> "Snapshot":
         """Load the snapshot with two read-only queries (customers + job tags)."""
+        present = cls._mart_columns()
+        available_suppress = {k for k, col in _SUPPRESS_SOURCE.items() if col in present}
+        # Per-key SQL expression, falling back to a constant when the backing column
+        # isn't in the mart yet, so a pre-migration warehouse still loads. Each yields
+        # a boolean: TRUE => the customer opted out of that channel.
+        dnm = "do_not_mail is true" if "do_not_mail" in present else "false"
+        dns = "do_not_service is true" if "do_not_service" in present else "false"
+        dnt = (
+            "(do_not_text_numbers is not null and do_not_text_numbers <> '')"
+            if "do_not_text_numbers" in present else "false"
+        )
         present = cls._mart_columns()
         available_suppress = {k for k, col in _SUPPRESS_SOURCE.items() if col in present}
         # Per-key SQL expression, falling back to a constant when the backing column
@@ -166,6 +189,7 @@ class Snapshot:
                 "is_columbus_customer", "is_dayton_customer",
                 "is_cincinnati_customer", "is_chillicothe_customer",
                 "is_member", "is_repeat_customer", "has_email", "has_mobile",
+                "do_not_mail", "do_not_service", "do_not_text",
             )
         }
         days = np.empty(n, dtype=np.float64)
@@ -192,6 +216,7 @@ class Snapshot:
         trade_masks = {name: cols_bool[col] for name, col in TRADES.items()}
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
+        suppress_masks = cls._suppress_masks_from(cols_bool, n)
         segments = {gkey: seg_lists[col] for gkey, col in SEGMENT_COLUMNS.items()}
 
         tag_index = cls._load_tag_index(id_to_row, n)
@@ -206,6 +231,16 @@ class Snapshot:
             "has_mobile": cols_bool["has_mobile"],
             "is_member": cols_bool["is_member"],
             "is_repeat_customer": cols_bool["is_repeat_customer"],
+        }
+
+    @staticmethod
+    def _suppress_masks_from(cols_bool: dict[str, np.ndarray], n: int) -> dict[str, np.ndarray]:
+        """Map each SUPPRESS key to its boolean column (TRUE => opted out). A key
+        whose column wasn't loaded (e.g. test rows without it) gets all-False, which
+        makes the suppression a harmless no-op."""
+        return {
+            key: cols_bool.get(key, np.zeros(n, dtype=bool))
+            for key in SUPPRESS
         }
 
     @staticmethod
@@ -259,6 +294,7 @@ class Snapshot:
                 "is_columbus_customer", "is_dayton_customer",
                 "is_cincinnati_customer", "is_chillicothe_customer",
                 "is_member", "is_repeat_customer", "has_email", "has_mobile",
+                "do_not_mail", "do_not_service", "do_not_text",
             )
         }
         days = np.array(
@@ -287,6 +323,7 @@ class Snapshot:
         trade_masks = {name: cols_bool[col] for name, col in TRADES.items()}
         region_masks = {name: cols_bool[col] for name, col in REGIONS.items()}
         flag_masks = cls._flag_masks_from(cols_bool)
+        suppress_masks = cls._suppress_masks_from(cols_bool, n)
         return cls(customer_id, trade_masks, region_masks, flag_masks, days,
                    revenue, zips, segments, tag_index, set(_SUPPRESS_SOURCE))
 
@@ -452,6 +489,9 @@ class Snapshot:
             "regions": [{"value": name, "count": int(m.sum())} for name, m in self.region_masks.items()],
             "segments": segs,
             "flags": {name: int(m.sum()) for name, m in self.flag_masks.items()},
+            # Do-not-contact suppression is always-on: opted-out customers are filtered
+            # out at load (from_warehouse / from_rows), so they're not in the snapshot
+            # at all and suppression is not a user-facing facet.
         }
 
     def tag_facets(self) -> list[dict]:
