@@ -7,10 +7,6 @@ the matching customers, and copy the exact read-only SQL.
 It queries the live warehouse table `edw2.customers` (one row per `customer_id`,
 ServiceTitan-derived, ~325K customers). Every query is **SELECT-only**.
 
-> **Migration in progress:** a Next.js 14 + TypeScript + Tailwind/Lucide/Recharts + `pg`
-> rewrite is underway in [`web/`](web/README.md). The Flask app here stays the source of
-> truth until the cutover. See `web/README.md` for the new stack and how to run it.
-
 ![Audience Builder](docs/screenshot.png)
 
 ## How it works
