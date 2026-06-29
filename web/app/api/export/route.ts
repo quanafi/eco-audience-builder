@@ -32,7 +32,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const filters = body.filters ?? {};
     const columns = body.columns ?? [];
     const fmt = (body.format ?? 'csv').toLowerCase();
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD stamp for the download filename.
 
     if (fmt === 'xlsx') {
       const data = await buildXlsx(columns, filters);

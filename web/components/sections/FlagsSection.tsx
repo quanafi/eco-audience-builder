@@ -28,18 +28,18 @@ export function FlagsSection({ set, facetCounts, config, onChange }: FilterSecti
       style={{ marginBottom: 6 }}
     >
       <div className="chips">
-        {config.flags.map((x) => {
-          const on = set.flags.includes(x.f);
-          const count = facetCounts?.flags?.[x.f];
+        {config.flags.map((flag) => {
+          const on = set.flags.includes(flag.f);
+          const count = facetCounts?.flags?.[flag.f];
           return (
             <button
               type="button"
-              key={x.f}
+              key={flag.f}
               className={`chip${on ? ' on' : ''}`}
               aria-pressed={on}
-              onClick={() => toggle(x.f)}
+              onClick={() => toggle(flag.f)}
             >
-              {x.label}
+              {flag.label}
               {count != null ? <span className="cnt">{fmtInt(count)}</span> : null}
             </button>
           );

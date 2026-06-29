@@ -22,6 +22,8 @@ type Token = { cls: string; text: string };
 function tokenizeLine(line: string): Token[] {
   if (/^\s*--/.test(line)) return [{ cls: 'com', text: line }];
   const tokens: Token[] = [];
+  // Capture groups: 1=string literal, 2=word/keyword, 3=number, 4=whitespace,
+  // 5=punctuation, 6=any other single char.
   const re = /('[^']*')|([A-Za-z_][A-Za-z0-9_]*)|(\d+\.?\d*)|(\s+)|([(),;>=<]+)|(.)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(line))) {
@@ -40,7 +42,7 @@ export function SqlView({ sql }: SqlViewProps) {
     try {
       await navigator.clipboard.writeText(sql);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
+      setTimeout(() => setCopied(false), 1400); // Revert "Copied!" label after 1.4s.
     } catch {
       /* clipboard unavailable — leave the button unchanged */
     }

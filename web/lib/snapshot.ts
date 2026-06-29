@@ -197,9 +197,9 @@ export class Snapshot {
     );
     // Per-key boolean expression, falling back to a constant when the backing column
     // isn't in the mart yet. TRUE => the customer opted out of that channel.
-    const dnm = present.has('do_not_mail') ? 'do_not_mail is true' : 'false';
-    const dns = present.has('do_not_service') ? 'do_not_service is true' : 'false';
-    const dnt = present.has('do_not_text_numbers')
+    const doNotMailExpr = present.has('do_not_mail') ? 'do_not_mail is true' : 'false';
+    const doNotServiceExpr = present.has('do_not_service') ? 'do_not_service is true' : 'false';
+    const doNotTextExpr = present.has('do_not_text_numbers')
       ? "(do_not_text_numbers is not null and do_not_text_numbers <> '')"
       : 'false';
 
@@ -224,11 +224,11 @@ export class Snapshot {
           (email is not null and email <> '')               as has_email,
           (phone_number is not null and phone_number <> '') as has_mobile
       from ${TABLE}
-      where not (${dnm}) and not (${dns}) and not (${dnt})`,
+      where not (${doNotMailExpr}) and not (${doNotServiceExpr}) and not (${doNotTextExpr})`,
     );
 
     const supp = await runQuery(
-      `select count(*) as n from ${TABLE} where (${dnm}) or (${dns}) or (${dnt})`,
+      `select count(*) as n from ${TABLE} where (${doNotMailExpr}) or (${doNotServiceExpr}) or (${doNotTextExpr})`,
     );
     const suppressedCount = Number(supp[0]?.n ?? 0);
 
