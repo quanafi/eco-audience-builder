@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 /**
@@ -28,17 +28,30 @@ export function Section({
   children,
 }: SectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const bodyId = useId();
   return (
     <div className={`fsection${collapsed ? ' collapsed' : ''}`} style={style}>
-      <button type="button" className="fhead" onClick={() => setCollapsed((c) => !c)}>
+      <button
+        type="button"
+        className="fhead"
+        aria-expanded={!collapsed}
+        aria-controls={bodyId}
+        onClick={() => setCollapsed((c) => !c)}
+      >
         <span className="fhead-main">
-          {icon ? <span className={`ficon${iconLime ? ' lime' : ''}`}>{icon}</span> : null}
+          {icon ? (
+            <span className={`ficon${iconLime ? ' lime' : ''}`} aria-hidden="true">
+              {icon}
+            </span>
+          ) : null}
           {label}
         </span>
         {activeCount ? <span className="fhead-cnt">{activeCount}</span> : null}
-        <ChevronDown className="fchevron" size={16} />
+        <ChevronDown className="fchevron" size={16} aria-hidden="true" />
       </button>
-      <div className="fbody">{children}</div>
+      <div className="fbody" id={bodyId}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -36,14 +36,11 @@ export function PreviewTable({ rows, audienceCount, loading, error }: PreviewTab
 
   const caption = loading
     ? 'Loading…'
-    : audienceCount > rows.length
-      ? `Showing top ${fmtInt(rows.length)} of ${fmtInt(audienceCount)} matches by lifetime value`
-      : `${fmtInt(audienceCount)} ${audienceCount === 1 ? 'match' : 'matches'}`;
+    : `${fmtInt(audienceCount)} ${audienceCount === 1 ? 'match' : 'matches'}`;
 
   return (
     <div id="previewPane">
       <div className="caption">
-        <span className="dot dot-lime" />
         <span>{caption}</span>
       </div>
       <div className="table-scroll">

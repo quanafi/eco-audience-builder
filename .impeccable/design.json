@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-30T00:00:00Z",
+  "title": "Design System: Eco Audience Builder",
+  "extensions": {
+    "colorMeta": {
+      "harbor-navy": { "role": "primary", "displayName": "Harbor Navy", "canonical": "#003057", "tonalRamp": ["#00121f", "#001d33", "#002847", "#003057", "#0a4677", "#1f6299", "#5a93c0", "#b9d2e6"] },
+      "bright-cyan": { "role": "secondary", "displayName": "Bright Cyan", "canonical": "#009FDF", "tonalRamp": ["#013a52", "#015676", "#01799f", "#009FDF", "#33b4e6", "#66c8ee", "#99dbf4", "#cceefa"] },
+      "signal-blue": { "role": "secondary", "displayName": "Signal Blue", "canonical": "#0057B8", "tonalRamp": ["#00203f", "#00305c", "#00417c", "#0057B8", "#2f78cd", "#5f99dc", "#9bbfea", "#cfe0f6"] },
+      "field-green": { "role": "tertiary", "displayName": "Field Green", "canonical": "#00843D", "tonalRamp": ["#00321a", "#004a26", "#006330", "#00843D", "#1fa05a", "#52bc81", "#8fd4ac", "#cfecda"] },
+      "lime": { "role": "tertiary", "displayName": "Lime", "canonical": "#84BD00", "tonalRamp": ["#324800", "#4a6700", "#638700", "#84BD00", "#9fcf33", "#bbdd66", "#d4ea99", "#ecf6cc"] },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#F7F9FB", "tonalRamp": ["#3c4755", "#5a6573", "#828c98", "#aab2bc", "#cdd4dc", "#e4e9ef", "#f0f3f6", "#f7f9fb"] },
+      "slate": { "role": "neutral", "displayName": "Slate", "canonical": "#6B7480", "tonalRamp": ["#2a2f36", "#3c4755", "#535c68", "#6B7480", "#8a929c", "#a9b0b9", "#c8ced5", "#e7eaee"] },
+      "graphite": { "role": "neutral", "displayName": "Graphite", "canonical": "#3C4755", "tonalRamp": ["#171b20", "#262d35", "#313943", "#3C4755", "#5a6572", "#828c98", "#aab2bc", "#d6dce3"] },
+      "ink-well": { "role": "neutral", "displayName": "Ink-Well", "canonical": "#0C1A28", "tonalRamp": ["#04090e", "#0C1A28", "#142a3f", "#1d3b57", "#2c5279", "#4a7299", "#7d9bba", "#b9cbdd"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Audience-size count and stat numbers only — the visual anchor." },
+      "headline": { "displayName": "Headline", "purpose": "The app title in the header." },
+      "title": { "displayName": "Title", "purpose": "Panel/section headers, tab labels — uppercase, tracked." },
+      "body": { "displayName": "Body", "purpose": "All running text, table cells, hints. 65–75ch max." },
+      "label": { "displayName": "Label", "purpose": "Sub-labels, column heads, captions, button text — uppercase." },
+      "mono": { "displayName": "Mono", "purpose": "The SQL code block only." }
+    },
+    "shadows": [
+      { "name": "resting-panel", "value": "0 1px 2px rgba(15,23,33,.04), 0 14px 30px -20px rgba(15,23,33,.28)", "purpose": "Soft ambient lift on main content panels. Calm, not dramatic." },
+      { "name": "floating-popover", "value": "0 8px 18px rgba(15,23,33,.10), 0 24px 48px -24px rgba(15,23,33,.4)", "purpose": "Deeper shadow for export/save/ads popovers that overlap content." },
+      { "name": "toggle-selected", "value": "0 1px 2px rgba(15,23,33,.12)", "purpose": "Tiny lift on the active segment of a segmented toggle." }
+    ],
+    "motion": [
+      { "name": "control-fast", "value": "120ms ease", "purpose": "Chip/segment/button state changes — instant-feeling feedback." },
+      { "name": "count-bar", "value": "400ms ease", "purpose": "Stat progress-bar width transition as the audience resizes." },
+      { "name": "chevron", "value": "150ms ease", "purpose": "Collapsible section chevron rotation." }
+    ],
+    "breakpoints": [
+      { "name": "stats-collapse", "value": "680px" },
+      { "name": "layout-stack", "value": "980px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single committed action per panel (e.g. Download).",
+      "html": "<button class=\"ds-btn-primary\">DOWNLOAD</button>",
+      "css": ".ds-btn-primary { font-family: 'Open Sans', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 8px 16px; border-radius: 9px; border: none; background: #003057; color: #fff; cursor: pointer; transition: background 120ms ease; } .ds-btn-primary:hover { background: #0057B8; } .ds-btn-primary:focus-visible { outline: 2px solid #009FDF; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: .6; cursor: default; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The default action button — most actions are ghosts.",
+      "html": "<button class=\"ds-btn-ghost\">CLEAR ALL</button>",
+      "css": ".ds-btn-ghost { font-family: 'Open Sans', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 7px 14px; border-radius: 10px; border: 1px solid #D6DCE3; background: #fff; color: #3C4755; cursor: pointer; transition: border-color 120ms ease, color 120ms ease; } .ds-btn-ghost:hover { border-color: #009FDF; color: #003057; } .ds-btn-ghost:focus-visible { outline: 2px solid #009FDF; outline-offset: 2px; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Multi-select filter chip; navy fill when selected.",
+      "html": "<button class=\"ds-chip\">Plumbing <span class=\"ds-chip-cnt\">142k</span></button>\n<button class=\"ds-chip ds-chip-on\">HVAC <span class=\"ds-chip-cnt\">98k</span></button>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; font-family: 'Open Sans', sans-serif; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #D6DCE3; background: #fff; color: #3C4755; cursor: pointer; transition: all 120ms ease; } .ds-chip:hover { filter: brightness(.97); } .ds-chip-cnt { font-size: 10.5px; font-weight: 700; opacity: .62; } .ds-chip-on { border-color: #003057; background: #003057; color: #fff; } .ds-chip-on .ds-chip-cnt { opacity: .7; } .ds-chip:focus-visible { outline: 2px solid #009FDF; outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text/search field with a cyan focus border.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search job tags…\" />",
+      "css": ".ds-input { width: 100%; font-family: 'Open Sans', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid #D6DCE3; border-radius: 10px; color: #003057; background: #fff; } .ds-input::placeholder { color: #6B7480; } .ds-input:focus { outline: none; border-color: #009FDF; }"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "card",
+      "refersTo": "stat",
+      "description": "Flat white tile; the audience-count tile is the page anchor.",
+      "html": "<div class=\"ds-stat\"><div class=\"ds-stat-num\">12,480</div><div class=\"ds-stat-lbl\"><span class=\"ds-dot\"></span>Audience size</div><div class=\"ds-stat-bar\"></div></div>",
+      "css": ".ds-stat { position: relative; overflow: hidden; background: #fff; border: 1px solid #E4E9EF; border-radius: 16px; padding: 18px 20px; } .ds-stat-num { font-family: 'Work Sans', sans-serif; font-weight: 800; font-size: 34px; line-height: 1; color: #003057; } .ds-stat-lbl { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-family: 'Open Sans', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #6B7480; } .ds-dot { width: 6px; height: 6px; border-radius: 50%; background: #84BD00; } .ds-stat-bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 64%; background: #009FDF; transition: width 400ms ease; }"
+    },
+    {
+      "name": "Underline Tab",
+      "kind": "nav",
+      "refersTo": "tabs",
+      "description": "Underline tabs; active gets a cyan bottom border.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-on\">PREVIEW</button><button class=\"ds-tab\">SQL</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 4px; border-bottom: 1px solid #E4E9EF; padding: 0 20px; } .ds-tab { background: none; border: none; padding: 14px 14px 12px; font-family: 'Open Sans', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; color: #6B7480; } .ds-tab:hover { color: #003057; } .ds-tab-on { color: #003057; border-bottom-color: #009FDF; } .ds-tab:focus-visible { outline: 2px solid #009FDF; outline-offset: -4px; }"
+    },
+    {
+      "name": "Segmented Toggle",
+      "kind": "custom",
+      "refersTo": "button-primary",
+      "description": "Include/exclude or tier switch; selected segment lifts on white.",
+      "html": "<div class=\"ds-seg-toggle\"><button class=\"ds-seg-btn ds-seg-on\">INCLUDE</button><button class=\"ds-seg-btn\">EXCLUDE</button></div>",
+      "css": ".ds-seg-toggle { display: flex; gap: 4px; padding: 3px; background: #ECEFF2; border-radius: 11px; } .ds-seg-btn { flex: 1; padding: 8px 6px; border: none; background: transparent; border-radius: 8px; font-family: 'Open Sans', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6B7480; cursor: pointer; transition: all 120ms ease; } .ds-seg-on { background: #fff; color: #003057; box-shadow: 0 1px 2px rgba(15,23,33,.12); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Guide",
+    "overview": "The Eco customer base is a population of ~325,000 people, and this tool is the guide to it. A field guide is approachable and legible by design: a non-expert opens it and immediately knows how to read an entry, narrow to a region, and find what they're after. The marketer is not writing a query against a warehouse; they are leafing through a well-organized reference, watching the population resize as they refine. The generated SQL is the appendix at the back. The system is refined and restrained: paper-white surfaces, hairline structure, and the Eco brand color as deliberate punctuation — a selected chip, a focus ring, a live count — never decoration. It rejects two things: the scary SQL/DBA console and the toy consumer app.",
+    "keyCharacteristics": [
+      "Paper-white canvas, hairline structure, brand color as punctuation.",
+      "The live audience count is the visual anchor of every screen.",
+      "Plain marketing language up front; SQL tucked one tab away.",
+      "Refined over decorative — restraint is the house style.",
+      "Holds up under a demo: clean hierarchy, unmistakable Eco identity."
+    ],
+    "rules": [
+      { "name": "The Punctuation Rule", "body": "Brand color is punctuation, not paint. On any screen the saturated brand hues should read as a handful of deliberate marks against paper-white, never as large color fields.", "section": "colors" },
+      { "name": "The One Dark Surface Rule", "body": "Ink-Well (#0C1A28) appears in exactly one place: the SQL code block. Dark chrome anywhere else reads as 'scary console' and is forbidden.", "section": "colors" },
+      { "name": "The Contrast Floor", "body": "Slate (#6B7480) on Paper/White sits near the AA edge; use it only for genuinely secondary small text. Step up to Graphite or Navy for anything decision-critical.", "section": "colors" },
+      { "name": "The Number-Leads Rule", "body": "Work Sans 800 at 34px is reserved for counts. Nothing else gets that weight or scale. The number always wins the hierarchy contest.", "section": "typography" },
+      { "name": "The Uppercase-Label Ceiling", "body": "Uppercase + wide tracking is for labels and section furniture only — never body copy, hints, or sentence-length text.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Stat tiles, inputs, chips, table rows, and segments are flat at rest. Shadow is earned by floating above content, not handed out for emphasis.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do make the audience-size count the largest, most prominent element on any screen (Work Sans 800, 34px, Harbor Navy).",
+      "Do use Harbor Navy for selected/committed states and Bright Cyan for focus and hover, consistently.",
+      "Do keep brand color to deliberate punctuation against paper-white.",
+      "Do default to ghost buttons; allow at most one navy primary action per panel.",
+      "Do keep tables flat and quiet: hairline dividers, Paper hover, tabular-nums.",
+      "Do step muted text up to Graphite or Navy whenever a user must read it to make a decision.",
+      "Do preserve the cyan focus border on inputs and add visible focus on every interactive control."
+    ],
+    "donts": [
+      "Don't make this look like a scary SQL/DBA console: no dark IDE chrome on the primary surface, no query editor as the landing view, no warehouse jargon in the controls.",
+      "Don't make it feel like a toy/consumer app: no oversized rounding, no playful color splashes, no emoji used as UI.",
+      "Don't drift toward a generic gradient-card SaaS dashboard — the only gradient is the 6px brand strip under the header.",
+      "Don't spread saturated brand color across large surfaces.",
+      "Don't add a second dark surface beyond the SQL block.",
+      "Don't push muted body text lighter than Slate for 'elegance'.",
+      "Don't extend uppercase + wide tracking to body copy or sentence-length text.",
+      "Don't give resting cards a drop shadow heavier than the panel ambient."
+    ]
+  }
+}

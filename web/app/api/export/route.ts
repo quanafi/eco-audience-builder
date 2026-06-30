@@ -36,7 +36,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     if (fmt === 'xlsx') {
       const data = await buildXlsx(columns, filters);
-      return new NextResponse(data, {
+      return new NextResponse(new Uint8Array(data), {
         headers: {
           'Content-Type': XLSX_MIME,
           'Content-Disposition': `attachment; filename="audience-${stamp}.xlsx"`,

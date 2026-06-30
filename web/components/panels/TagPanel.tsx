@@ -18,12 +18,25 @@ type Note = { msg: string; ok: boolean } | null;
 export function TagPanel({ payload, lastCount }: TagPanelProps) {
   const [tag, setTag] = useState('');
   const [applying, setApplying] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<Note>(null);
 
+  // Step 1: validate, then open the confirm gate instead of writing immediately.
+  const startApply = useCallback(() => {
+    if (!tag.trim()) {
+      setNote({ msg: 'Enter a tag name.', ok: false });
+      return;
+    }
+    setNote(null);
+    setConfirming(true);
+  }, [tag]);
+
+  // Step 2: the actual write-back, only reachable from the confirm gate.
   const doApply = useCallback(async () => {
     const trimmed = tag.trim();
     if (!trimmed) {
       setNote({ msg: 'Enter a tag name.', ok: false });
+      setConfirming(false);
       return;
     }
     setApplying(true);
@@ -35,6 +48,7 @@ export function TagPanel({ payload, lastCount }: TagPanelProps) {
       setNote({ msg: String(e), ok: false });
     } finally {
       setApplying(false);
+      setConfirming(false);
     }
   }, [tag, payload]);
 
@@ -58,17 +72,44 @@ export function TagPanel({ payload, lastCount }: TagPanelProps) {
               value={tag}
               onChange={(e) => setTag(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') doApply();
+                if (e.key === 'Enter') startApply();
               }}
             />
           </div>
           {target ? <div className="tagst-target">{target}</div> : null}
-          <div className="export-foot">
-            <span className={note?.ok ? 'export-note ok' : 'export-note'}>{note?.msg ?? ''}</span>
-            <button type="button" className="btn-download" onClick={doApply} disabled={applying}>
-              {applying ? 'Applying…' : 'Apply tag'}
-            </button>
-          </div>
+          {confirming ? (
+            <div className="confirm-gate">
+              <div className="confirm-summary">
+                Tag{' '}
+                <b>
+                  {lastCount != null
+                    ? `${fmtInt(lastCount)} ${lastCount === 1 ? 'customer' : 'customers'}`
+                    : 'the matching customers'}
+                </b>{' '}
+                in ServiceTitan as <b>&ldquo;{tag.trim()}&rdquo;</b>? This writes to your system of record.
+              </div>
+              <div className="confirm-actions">
+                <button type="button" className="btn-ghost" onClick={() => setConfirming(false)} disabled={applying}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-download" onClick={doApply} disabled={applying}>
+                  {applying ? 'Applying…' : 'Confirm tag'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="export-foot">
+              <span className={note?.ok ? 'export-note ok' : 'export-note'}>{note?.msg ?? ''}</span>
+              <button
+                type="button"
+                className="btn-download"
+                onClick={startApply}
+                disabled={applying || lastCount === 0}
+              >
+                Apply tag
+              </button>
+            </div>
+          )}
         </>
       )}
     </Dropdown>

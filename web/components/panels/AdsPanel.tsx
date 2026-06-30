@@ -10,6 +10,22 @@ import type { AdsEstimate } from '../../lib/types';
 
 type Platform = 'google' | 'meta';
 
+const PLATFORM_LABEL: Record<Platform, string> = { google: 'Google Ads', meta: 'Meta Ads' };
+
+/**
+ * Build the sentence the marketer reads in the confirm gate, right before a (dry-run) send.
+ *
+ * @param platformLabel human label for the destination, e.g. "Google Ads"
+ * @param count         audience size that would be uploaded
+ * @param reach         how many of those have a usable identifier, or null when no
+ *                      estimate has been run yet (so the match rate is still unknown)
+ */
+function adsConfirmSummary(platformLabel: string, count: number, reach: number | null): string {
+  return reach !== null
+    ? `Upload ${fmtInt(count)} customers to ${platformLabel}? ${fmtInt(reach)} have a usable identifier.`
+    : `Upload ${fmtInt(count)} customers to ${platformLabel}? Run an estimate first to see how many can be matched.`;
+}
+
 /**
  * Send-to-Ads panel (port of setupAds/doAdsEstimate/doAdsSend in static/app.js).
  *
@@ -18,13 +34,19 @@ type Platform = 'google' | 'meta';
  * identifier coverage; it is an estimate, NOT a platform-reported rate. The dry-run badge
  * keeps that unmistakable.
  */
-export function AdsPanel({ payload }: AdsPanelProps) {
+export function AdsPanel({ payload, lastCount }: AdsPanelProps) {
   const [platform, setPlatform] = useState<Platform>('google');
   const [estimate, setEstimate] = useState<AdsEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [sendResult, setSendResult] = useState<ActionResult | null>(null);
+
+  const pickPlatform = (p: Platform) => {
+    setPlatform(p);
+    setConfirming(false); // a pending confirm would describe the old platform/estimate
+  };
 
   const doEstimate = async () => {
     setEstimating(true);
@@ -56,6 +78,7 @@ export function AdsPanel({ payload }: AdsPanelProps) {
       setSendResult({ error: String(e) });
     } finally {
       setSending(false);
+      setConfirming(false);
     }
   };
 
@@ -63,6 +86,10 @@ export function AdsPanel({ payload }: AdsPanelProps) {
   const rate = estimate?.platforms?.[platform];
   const ok = sendResult ? !sendResult.error : false;
   const note = sendResult ? sendResult.error || sendResult.message || 'Done.' : '';
+
+  // Prefer the estimate's count when present; fall back to the live audience size.
+  const sendCount = estimate?.audienceCount ?? lastCount ?? 0;
+  const reachable = estimate?.coverage?.hasAnyIdentifier ?? null;
 
   return (
     <Dropdown label="Send to Ads" icon={<Send size={15} />}>
@@ -80,7 +107,7 @@ export function AdsPanel({ payload }: AdsPanelProps) {
                   name="adsplatform"
                   value="google"
                   checked={platform === 'google'}
-                  onChange={() => setPlatform('google')}
+                  onChange={() => pickPlatform('google')}
                 />{' '}
                 Google Ads
               </label>
@@ -90,7 +117,7 @@ export function AdsPanel({ payload }: AdsPanelProps) {
                   name="adsplatform"
                   value="meta"
                   checked={platform === 'meta'}
-                  onChange={() => setPlatform('meta')}
+                  onChange={() => pickPlatform('meta')}
                 />{' '}
                 Meta Ads
               </label>
@@ -134,15 +161,34 @@ export function AdsPanel({ payload }: AdsPanelProps) {
               <div className="ads-hint">Estimate the predicted customer match rate before uploading.</div>
             )}
           </div>
-          <div className="export-foot">
-            <span className={ok ? 'export-note ok' : 'export-note'}>{note}</span>
-            <button type="button" className="btn-ghost" disabled={estimating} onClick={doEstimate}>
-              {estimating ? 'Estimating…' : 'Estimate'}
-            </button>
-            <button type="button" className="btn-download" disabled={sending} onClick={doSend}>
-              {sending ? 'Sending…' : 'Dry-run send'}
-            </button>
-          </div>
+          {confirming ? (
+            <div className="confirm-gate">
+              <div className="confirm-summary">{adsConfirmSummary(PLATFORM_LABEL[platform], sendCount, reachable)}</div>
+              <div className="confirm-actions">
+                <button type="button" className="btn-ghost" disabled={sending} onClick={() => setConfirming(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-download" disabled={sending} onClick={doSend}>
+                  {sending ? 'Sending…' : 'Confirm dry-run send'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="export-foot">
+              <span className={ok ? 'export-note ok' : 'export-note'}>{note}</span>
+              <button type="button" className="btn-ghost" disabled={estimating} onClick={doEstimate}>
+                {estimating ? 'Estimating…' : 'Estimate'}
+              </button>
+              <button
+                type="button"
+                className="btn-download"
+                disabled={sending || sendCount === 0}
+                onClick={() => setConfirming(true)}
+              >
+                Dry-run send
+              </button>
+            </div>
+          )}
         </>
       )}
     </Dropdown>

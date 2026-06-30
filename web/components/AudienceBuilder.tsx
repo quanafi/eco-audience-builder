@@ -175,7 +175,7 @@ export function AudienceBuilder() {
           <img src="/eco-logo.png" alt="eco" />
           <div className="hdr-div" />
           <div>
-            <div className="hdr-title">Audience Builder</div>
+            <h1 className="hdr-title">Audience Builder</h1>
             <div className="hdr-sub">Marketing Segmentation</div>
           </div>
         </div>
@@ -216,13 +216,13 @@ export function AudienceBuilder() {
               {sectionProps ? (
                 <>
                   <TradesSection {...sectionProps} />
+                  <FlagsSection {...sectionProps} />
                   <RecencySection {...sectionProps} />
                   <RegionsSection {...sectionProps} />
                   <ZipSection {...sectionProps} />
                   <SpendSection {...sectionProps} />
                   <SegmentsSection {...sectionProps} />
                   <TagsSection {...sectionProps} />
-                  <FlagsSection {...sectionProps} />
                 </>
               ) : (
                 <div className="hint">Loading filters…</div>
@@ -259,7 +259,7 @@ export function AudienceBuilder() {
                   <SavePanel payload={payload} onLoad={applyPayload} />
                   <TagPanel payload={payload} lastCount={result?.audienceCount ?? null} />
                   <ExportPanel payload={payload} />
-                  <AdsPanel payload={payload} />
+                  <AdsPanel payload={payload} lastCount={result?.audienceCount ?? null} />
                 </div>
               </div>
 

@@ -73,7 +73,8 @@ export interface ExportPanelProps {
   payload: FilterPayload;
 }
 
-/** Send-to-ads (platform, estimate, dry-run send). */
+/** Send-to-ads (platform, estimate, dry-run send). `lastCount` is the current audience size (for the pre-send confirm summary). */
 export interface AdsPanelProps {
   payload: FilterPayload;
+  lastCount: number | null;
 }

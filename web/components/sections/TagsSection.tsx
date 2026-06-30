@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tag } from 'lucide-react';
 import { Section } from '../Section';
 import type { FilterSectionProps } from '../contracts';
@@ -31,10 +31,46 @@ export function TagsSection({ set, facets, facetCounts, onChange }: FilterSectio
   const tagOpts = facets.tags ?? [];
   const q = search.trim().toLowerCase();
 
-  const toggle = (value: string) => {
-    const next = set.tags.includes(value) ? set.tags.filter((t) => t !== value) : [...set.tags, value];
-    onChange({ ...set, tags: next });
-  };
+  // O(1) membership: the selected set can be re-checked thousands of times while
+  // mapping the tag universe, so resolve it once instead of an O(n) Array.includes
+  // per row (which made the whole render O(n²)).
+  const selected = useMemo(() => new Set(set.tags), [set.tags]);
+  const counts = facetCounts?.tags;
+
+  const toggle = useCallback(
+    (value: string) => {
+      const next = set.tags.includes(value) ? set.tags.filter((t) => t !== value) : [...set.tags, value];
+      onChange({ ...set, tags: next });
+    },
+    [set, onChange],
+  );
+
+  // Build the option rows once per meaningful input change. The parent rebuilds
+  // sectionProps on every keystroke/count refresh, so without this the full list
+  // reconciles each time; here it only recomputes when the universe, the selection,
+  // the search query, or the live counts actually change.
+  const rows = useMemo(
+    () =>
+      tagOpts.map((o) => {
+        const on = selected.has(o.value);
+        const hide = q !== '' && !o.value.toLowerCase().includes(q);
+        const count = counts?.[o.value] ?? o.count;
+        return (
+          <button
+            type="button"
+            key={o.value}
+            className={`tag-opt${on ? ' on' : ''}`}
+            aria-pressed={on}
+            hidden={hide}
+            onClick={() => toggle(o.value)}
+          >
+            <span className="tag-opt-lbl">{o.value}</span>
+            <span className="cnt">{fmtInt(count)}</span>
+          </button>
+        );
+      }),
+    [tagOpts, selected, q, counts, toggle],
+  );
 
   const placeholder = loaded ? `Search ${fmtInt(tagOpts.length)} tags…` : 'Loading tags…';
 
@@ -71,24 +107,7 @@ export function TagsSection({ set, facets, facetCounts, onChange }: FilterSectio
         {!loaded ? (
           <div className="hint">Loading tags…</div>
         ) : tagOpts.length ? (
-          tagOpts.map((o) => {
-            const on = set.tags.includes(o.value);
-            const hide = q !== '' && !o.value.toLowerCase().includes(q);
-            const count = facetCounts?.tags?.[o.value] ?? o.count;
-            return (
-              <button
-                type="button"
-                key={o.value}
-                className={`tag-opt${on ? ' on' : ''}`}
-                aria-pressed={on}
-                hidden={hide}
-                onClick={() => toggle(o.value)}
-              >
-                <span className="tag-opt-lbl">{o.value}</span>
-                <span className="cnt">{fmtInt(count)}</span>
-              </button>
-            );
-          })
+          rows
         ) : (
           <div className="hint">No tags match.</div>
         )}
