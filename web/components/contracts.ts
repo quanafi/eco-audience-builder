@@ -51,11 +51,6 @@ export interface PreviewTableProps {
   error: string | null;
 }
 
-/** Generated-SQL view (copy button + SELECT-only tag). */
-export interface SqlViewProps {
-  sql: string;
-}
-
 /** Save / load saved audiences. `onLoad` rehydrates the builder from a saved payload. */
 export interface SavePanelProps {
   payload: FilterPayload;

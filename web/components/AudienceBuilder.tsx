@@ -27,7 +27,6 @@ import { TagsSection } from './sections/TagsSection';
 import { FlagsSection } from './sections/FlagsSection';
 import { StatsCharts } from './results/StatsCharts';
 import { PreviewTable } from './results/PreviewTable';
-import { SqlView } from './results/SqlView';
 import { SavePanel } from './panels/SavePanel';
 import { TagPanel } from './panels/TagPanel';
 import { ExportPanel } from './panels/ExportPanel';
@@ -43,7 +42,6 @@ export function AudienceBuilder() {
   const [mode, setMode] = useState<Mode>('include');
   const [sets, setSets] = useState<Sets>({ include: emptySet(), exclude: emptySet() });
   const [result, setResult] = useState<AudienceResponse | null>(null);
-  const [tab, setTab] = useState<'preview' | 'sql'>('preview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,20 +239,7 @@ export function AudienceBuilder() {
 
             <div className="panel card">
               <div className="tabs">
-                <button
-                  type="button"
-                  className={`tab${tab === 'preview' ? ' tab-on' : ''}`}
-                  onClick={() => setTab('preview')}
-                >
-                  Audience preview
-                </button>
-                <button
-                  type="button"
-                  className={`tab${tab === 'sql' ? ' tab-on' : ''}`}
-                  onClick={() => setTab('sql')}
-                >
-                  Generated SQL
-                </button>
+                <h2 className="panel-title">Audience preview</h2>
                 <div className="card-actions">
                   <SavePanel payload={payload} onLoad={applyPayload} />
                   <TagPanel payload={payload} lastCount={result?.audienceCount ?? null} />
@@ -263,16 +248,12 @@ export function AudienceBuilder() {
                 </div>
               </div>
 
-              {tab === 'preview' ? (
-                <PreviewTable
-                  rows={result?.rows ?? []}
-                  audienceCount={result?.audienceCount ?? 0}
-                  loading={loading}
-                  error={error}
-                />
-              ) : (
-                <SqlView sql={result?.sql ?? ''} />
-              )}
+              <PreviewTable
+                rows={result?.rows ?? []}
+                audienceCount={result?.audienceCount ?? 0}
+                loading={loading}
+                error={error}
+              />
             </div>
 
             <footer className="foot">
@@ -286,7 +267,6 @@ export function AudienceBuilder() {
                   appear in any audience.
                 </span>
               ) : null}
-              Generated SQL is <code>SELECT</code>-only and safe to paste into Hex.
             </footer>
           </section>
         </div>

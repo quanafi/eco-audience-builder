@@ -181,6 +181,8 @@ input.fin:focus{outline:none;border-color:var(--cyan)}
   text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;
   color:var(--g500);font-family:inherit}
 .tab.tab-on{color:var(--navy);border-bottom-color:var(--cyan)}
+.panel-title{margin:0;padding:14px 14px 12px;font-weight:var(--fw-bold);font-size:var(--text-caption);
+  letter-spacing:var(--tracking-title);text-transform:uppercase;color:var(--navy)}
 
 .caption{padding:11px 20px;border-bottom:1px solid var(--g100);font-size:var(--text-caption);color:var(--g500);
   display:flex;align-items:center;gap:8px}
