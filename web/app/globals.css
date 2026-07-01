@@ -191,6 +191,12 @@ table{width:100%;border-collapse:collapse;font-size:var(--text-sm)}
 th{text-align:left;font-size:var(--text-micro);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--g500);
   padding:11px 14px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:#fff;font-weight:var(--fw-bold);z-index:1}
 th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+.th-sort{display:inline-flex;align-items:center;gap:2px;
+  background:none;border:0;padding:0;margin:0;
+  font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer}
+.th-sort:hover{color:var(--navy)}
+.sort-arrow{flex:none}
+th.num .th-sort{justify-content:flex-end}
 td{padding:11px 14px;border-bottom:1px solid var(--g100);vertical-align:top}
 tbody tr{transition:background .1s}
 tbody tr:hover{background:var(--paper)}

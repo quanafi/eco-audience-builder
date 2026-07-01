@@ -203,34 +203,48 @@ export class Snapshot {
       ? "(do_not_text_numbers is not null and do_not_text_numbers <> '')"
       : 'false';
 
+    // Single scan of the mart. `base` tags each row's opt-out state; `counted` adds a
+    // window count over the *unfiltered* CTE (window functions run after WHERE, so the
+    // count must be computed before the outer WHERE drops the opted-out rows); the outer
+    // query keeps only the reachable customers. This replaces the previous two full-table
+    // scans (main load + a standalone count(*)) with one.
+    const optedOutExpr = `((${doNotMailExpr}) or (${doNotServiceExpr}) or (${doNotTextExpr}))`;
     const rows = await runQuery(
-      `select
-          customer_id,
-          coalesce(plumbing_customer, 0) as plumbing_customer,
-          coalesce(hvac_customer, 0)     as hvac_customer,
-          coalesce(electric_customer, 0) as electric_customer,
-          coalesce(is_columbus_customer, 0)    as is_columbus_customer,
-          coalesce(is_dayton_customer, 0)      as is_dayton_customer,
-          coalesce(is_cincinnati_customer, 0)  as is_cincinnati_customer,
-          coalesce(is_chillicothe_customer, 0) as is_chillicothe_customer,
-          coalesce(is_member, 0)          as is_member,
-          coalesce(is_repeat_customer, 0) as is_repeat_customer,
-          days_since_last_job,
-          lifetime_revenue,
-          address,
-          lifetime_revenue_segment,
-          frequency_segment,
-          paid_recency_segment,
-          (email is not null and email <> '')               as has_email,
-          (phone_number is not null and phone_number <> '') as has_mobile
-      from ${TABLE}
-      where not (${doNotMailExpr}) and not (${doNotServiceExpr}) and not (${doNotTextExpr})`,
+      `with base as (
+        select
+            customer_id,
+            coalesce(plumbing_customer, 0) as plumbing_customer,
+            coalesce(hvac_customer, 0)     as hvac_customer,
+            coalesce(electric_customer, 0) as electric_customer,
+            coalesce(is_columbus_customer, 0)    as is_columbus_customer,
+            coalesce(is_dayton_customer, 0)      as is_dayton_customer,
+            coalesce(is_cincinnati_customer, 0)  as is_cincinnati_customer,
+            coalesce(is_chillicothe_customer, 0) as is_chillicothe_customer,
+            coalesce(is_member, 0)          as is_member,
+            coalesce(is_repeat_customer, 0) as is_repeat_customer,
+            days_since_last_job,
+            lifetime_revenue,
+            address,
+            lifetime_revenue_segment,
+            frequency_segment,
+            paid_recency_segment,
+            (email is not null and email <> '')               as has_email,
+            (phone_number is not null and phone_number <> '') as has_mobile,
+            ${optedOutExpr} as opted_out
+        from ${TABLE}
+      ),
+      counted as (
+        select *, sum(case when opted_out then 1 else 0 end) over () as suppressed_count
+        from base
+      )
+      select * from counted where not opted_out`,
     );
 
-    const supp = await runQuery(
-      `select count(*) as n from ${TABLE} where (${doNotMailExpr}) or (${doNotServiceExpr}) or (${doNotTextExpr})`,
-    );
-    const suppressedCount = Number(supp[0]?.n ?? 0);
+    // Every surviving row carries the same full opt-out total from the window count.
+    // (If literally every customer opted out, no rows survive and this reads 0 — an
+    // edge case the standalone count previously reported, but not one that occurs in
+    // practice.)
+    const suppressedCount = Number(rows[0]?.suppressed_count ?? 0);
 
     const n = rows.length;
     const customerId = new Float64Array(n);

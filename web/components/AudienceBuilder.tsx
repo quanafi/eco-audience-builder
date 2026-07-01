@@ -77,38 +77,44 @@ export function AudienceBuilder() {
     timerRef.current = setTimeout(runQuery, 220);
   }, [runQuery]);
 
-  // Initial load: config (best-effort), facets, first query, then async tags.
+  // Initial load: config, facets, the first audience query, and the tag universe are
+  // independent (none needs another's result), so they run concurrently and each is
+  // applied as it resolves. Every handler is guarded by `cancelled` so an unmount
+  // mid-flight can't set state on a dead component.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const cfg = await api.config();
-        if (!cancelled && cfg && !(cfg as { error?: string }).error) setConfig(cfg);
-      } catch {
-        /* keep fallbacks */
+
+    // config is best-effort — on error/absence we keep the hardcoded FALLBACK_* vocab.
+    const applyConfig = (cfg: Config | { error?: string }) => {
+      if (!cancelled && cfg && !(cfg as { error?: string }).error) setConfig(cfg as Config);
+    };
+    // facets is required for the section counts; its error is the one we surface.
+    const applyFacets = (f: Facets | { error?: string }) => {
+      if (cancelled) return;
+      if ((f as { error?: string }).error) {
+        setError((f as { error?: string }).error!);
+        return;
       }
-      try {
-        const f = await api.facets();
-        if (cancelled) return;
-        if ((f as { error?: string }).error) {
-          setError((f as { error?: string }).error!);
-          return;
-        }
-        setFacets(f);
-        runQuery();
-        // Tag universe loads separately (its reach query is slow) so it never blocks
-        // the page; merge it into facets when it resolves.
-        api
-          .tags()
-          .then((d) => {
-            if (cancelled || !d || d.error || !d.tags) return;
-            setFacets((prev) => (prev ? { ...prev, tags: d.tags } : prev));
-          })
-          .catch(() => {});
-      } catch (e) {
+      setFacets(f as Facets);
+    };
+    // Tag universe loads separately (its reach query is slow); merge into facets when ready.
+    const applyTags = (d: Awaited<ReturnType<typeof api.tags>>) => {
+      if (cancelled || !d || d.error || !d.tags) return;
+      setFacets((prev) => (prev ? { ...prev, tags: d.tags } : prev));
+    };
+
+    // Fire all four concurrently — none awaits another, so first paint no longer pays a
+    // config→facets→audience round-trip chain.
+    api.config().then(applyConfig).catch(() => {}); // best-effort: keep fallbacks
+    api
+      .facets()
+      .then(applyFacets)
+      .catch((e) => {
         if (!cancelled) setError('Could not load facets: ' + String(e));
-      }
-    })();
+      });
+    runQuery(); // manages its own loading/error state; no longer gated on facets
+    api.tags().then(applyTags).catch(() => {}); // slow reach query; never blocks the page
+
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current); // drop any pending debounce
