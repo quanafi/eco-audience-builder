@@ -13,7 +13,7 @@ function row(overrides: Partial<PreviewRow>): PreviewRow {
     city: 'Columbus',
     zip: '43215',
     state: 'OH',
-    primary_trade: 'plumbing',
+    trades: ['Plumbing'],
     lifetime_jobs: 1,
     lifetime_revenue: 100,
     last_completed_job: '2026-01-01',
@@ -100,5 +100,56 @@ describe('PreviewTable sorting', () => {
     render(<PreviewTable rows={rows} audienceCount={3} loading={false} error={null} />);
     const flagsHeader = screen.getByRole('columnheader', { name: 'Flags' });
     expect(flagsHeader.querySelector('button')).toBeNull();
+  });
+});
+
+describe('PreviewTable trades column', () => {
+  it('renders one pill per trade', () => {
+    render(
+      <PreviewTable
+        rows={[row({ customer_id: 1, trades: ['Plumbing', 'HVAC'] })]}
+        audienceCount={1}
+        loading={false}
+        error={null}
+      />,
+    );
+    const cell = document.querySelector('.trade-tags')!;
+    expect(Array.from(cell.querySelectorAll('.tag')).map((el) => el.textContent)).toEqual([
+      'Plumbing',
+      'HVAC',
+    ]);
+  });
+
+  it('renders a distinct Prospect pill (never a dash) when there are no trades', () => {
+    render(
+      <PreviewTable
+        rows={[row({ customer_id: 1, trades: [] })]}
+        audienceCount={1}
+        loading={false}
+        error={null}
+      />,
+    );
+    const pill = document.querySelector('.tag-prospect')!;
+    expect(pill).not.toBeNull();
+    expect(pill.textContent).toBe('Prospect');
+    expect(document.body.textContent).not.toContain('—');
+  });
+
+  it('sorts by trade label, with Prospect (empty) ordering after named trades', () => {
+    render(
+      <PreviewTable
+        rows={[
+          row({ customer_id: 1, name: 'Zed', trades: [] }),
+          row({ customer_id: 2, name: 'Amy', trades: ['HVAC'] }),
+          row({ customer_id: 3, name: 'Bob', trades: ['Plumbing'] }),
+        ]}
+        audienceCount={3}
+        loading={false}
+        error={null}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Trades' }));
+    // Ascending by label: 'HVAC' < 'Plumbing' < 'Prospect'.
+    expect(names()).toEqual(['Amy', 'Bob', 'Zed']);
   });
 });

@@ -86,6 +86,54 @@ describe('numeric ranges (null-aware)', () => {
   });
 });
 
+describe('blog engagement (known-zero range)', () => {
+  const blogSnap = () =>
+    Snapshot.fromRows([row(1), row(2), row(3), row(4)], [], {
+      blogRows: [
+        { customer_id: 2, blogs: 5 },
+        { customer_id: 4, blogs: 3 },
+      ],
+    });
+
+  it('blogsMin selects only customers at/above the threshold', () => {
+    const snap = blogSnap();
+    expect(ids(snap, snap.matchMask({ blogsMin: 3 }))).toEqual([2, 4]);
+  });
+  it('blogsMax includes known-zero customers', () => {
+    const snap = blogSnap();
+    expect(ids(snap, snap.matchMask({ blogsMax: 3 }))).toEqual([1, 3, 4]);
+  });
+  it('customers with no journey rows default to zero (known)', () => {
+    const snap = blogSnap();
+    expect(ids(snap, snap.matchMask({ blogsMax: 0 }))).toEqual([1, 3]);
+  });
+  it('excluding "read >= 3" keeps the zero-blog customers', () => {
+    const snap = blogSnap();
+    expect(ids(snap, snap.matchMask({ exclude: { blogsMin: 3 } }))).toEqual([1, 3]);
+  });
+});
+
+describe('has_active_lead flag', () => {
+  const leadSnap = () => Snapshot.fromRows([row(1), row(2), row(3)], [], { activeLeadIds: [2] });
+
+  it('includes only customers with an open lead', () => {
+    const snap = leadSnap();
+    expect(ids(snap, snap.matchMask({ flags: ['has_active_lead'] }))).toEqual([2]);
+  });
+  it('exclude drops customers with an open lead', () => {
+    const snap = leadSnap();
+    expect(ids(snap, snap.matchMask({ exclude: { flags: ['has_active_lead'] } }))).toEqual([1, 3]);
+  });
+  it('base facet counts the active-lead customers', () => {
+    expect(leadSnap().baseFacets().flags.has_active_lead).toBe(1);
+  });
+  it('defaults to an empty mask when no ids are loaded', () => {
+    const snap = Snapshot.fromRows([row(1), row(2)]);
+    expect(snap.baseFacets().flags.has_active_lead).toBe(0);
+    expect(ids(snap, snap.matchMask({ flags: ['has_active_lead'] }))).toEqual([]);
+  });
+});
+
 describe('zips parsed from address', () => {
   it('zip membership from parsed address', () => {
     const snap = build();

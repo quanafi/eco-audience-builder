@@ -48,7 +48,9 @@ const previewRow = (cid: number, over: Row = {}): Row => ({
   city: 'Columbus',
   zip: '43215',
   state: 'OH',
-  primary_trade: 'Plumbing',
+  plumbing_customer: 1,
+  hvac_customer: 0,
+  electric_customer: 0,
   lifetime_jobs: 3,
   lifetime_revenue: 1000,
   last_completed_job: null,
@@ -93,10 +95,12 @@ describe('fetchPreviewRows', () => {
   });
 
   it('maps each row through presentRow', async () => {
-    runQuery.mockResolvedValue([previewRow(1, { name: '  ', primary_trade: null })]);
+    runQuery.mockResolvedValue([
+      previewRow(1, { name: '  ', plumbing_customer: 0, hvac_customer: 0, electric_customer: 0 }),
+    ]);
     const [r] = await fetchPreviewRows([1]);
     expect(r.name).toBe('Customer #1'); // blank name defaulted
-    expect(r.primary_trade).toBe('—'); // null trade defaulted
+    expect(r.trades).toEqual([]); // no trade flags → prospect (empty trades)
     expect(r.has_email).toBe(true);
   });
 });

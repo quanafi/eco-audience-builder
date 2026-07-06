@@ -82,7 +82,7 @@ describe('GET /api/config', () => {
       expect.arrayContaining(['flags', 'trades', 'regions', 'segmentGroups']),
     );
     expect(new Set(data.flags.map((f: { f: string }) => f.f))).toEqual(
-      new Set(['is_member', 'has_email', 'has_mobile', 'is_repeat_customer']),
+      new Set(['is_member', 'has_email', 'has_mobile', 'is_repeat_customer', 'has_active_lead']),
     );
     expect(data.trades).toContain('Plumbing');
   });

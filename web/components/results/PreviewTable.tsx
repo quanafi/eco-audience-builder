@@ -12,6 +12,12 @@ import { ago, fmtInt, fmtMoney, fmtMonth, stUrl } from '../../lib/format';
  * error and empty states; the "top N of M" caption mirrors the legacy `renderResult`.
  */
 
+// Comma-joined trades for display + sorting; customers with no completed jobs (no trade
+// flags) are "Prospect" rather than an empty string, keeping them visible and sortable.
+function tradesLabel(r: PreviewRow): string {
+  return r.trades.join(', ') || 'Prospect';
+}
+
 type SortKey = 'customer' | 'location' | 'trade' | 'jobs' | 'revenue' | 'lastJob';
 type SortState = { key: SortKey; dir: 'asc' | 'desc' } | null;
 
@@ -21,7 +27,7 @@ type SortState = { key: SortKey; dir: 'asc' | 'desc' } | null;
 const COMPARATORS: Record<SortKey, (a: PreviewRow, b: PreviewRow, sign: 1 | -1) => number> = {
   customer: (a, b, sign) => sign * a.name.localeCompare(b.name),
   location: (a, b, sign) => sign * (a.city.localeCompare(b.city) || a.state.localeCompare(b.state)),
-  trade: (a, b, sign) => sign * a.primary_trade.localeCompare(b.primary_trade),
+  trade: (a, b, sign) => sign * tradesLabel(a).localeCompare(tradesLabel(b)),
   jobs: (a, b, sign) => sign * (a.lifetime_jobs - b.lifetime_jobs),
   revenue: (a, b, sign) => sign * (a.lifetime_revenue - b.lifetime_revenue),
   lastJob: (a, b, sign) => {
@@ -110,7 +116,7 @@ export function PreviewTable({ rows, audienceCount, loading, error }: PreviewTab
               </th>
               <th aria-sort={ariaSortFor('trade')}>
                 <button type="button" className="th-sort" onClick={() => toggleSort('trade')}>
-                  Primary trade{sortArrow('trade')}
+                  Trades{sortArrow('trade')}
                 </button>
               </th>
               <th className="num" aria-sort={ariaSortFor('jobs')}>
@@ -163,7 +169,17 @@ function PreviewRowCells({ r }: { r: PreviewRow }) {
         <div className="loc-sub">{r.zip || ''}</div>
       </td>
       <td>
-        <span className="tag">{r.primary_trade}</span>
+        {r.trades.length ? (
+          <div className="trade-tags">
+            {r.trades.map((t) => (
+              <span key={t} className="tag">
+                {t}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="tag tag-prospect">Prospect</span>
+        )}
       </td>
       <td className="num">{fmtInt(r.lifetime_jobs)}</td>
       <td className="num">

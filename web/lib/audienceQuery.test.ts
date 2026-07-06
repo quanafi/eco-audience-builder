@@ -103,6 +103,39 @@ describe('numeric comparisons', () => {
     const sql = aq.buildDisplaySql({ spendMin: 1_000_000 });
     expect(sql).toContain('lifetime_revenue >= 1000000');
   });
+  it('blogs min/max bind values against the coalesce subquery', () => {
+    const { where, params } = aq.buildFilters({ blogsMin: 1, blogsMax: 10 });
+    expect(where.length).toBe(2);
+    expect(where[0]).toContain('unique_blog_posts_viewed');
+    expect([...params].sort((a, b) => (a as number) - (b as number))).toEqual([1, 10]);
+    assertConsistent(where, params);
+  });
+  it('blogs inlined as numbers in display SQL', () => {
+    const sql = aq.buildDisplaySql({ blogsMin: 3 });
+    expect(sql).toContain('unique_blog_posts_viewed');
+    expect(sql).toContain('>= 3');
+  });
+  it('blank blogs filters are ignored', () => {
+    const { where, params } = aq.buildFilters({ blogsMin: '', blogsMax: null });
+    expect(where).toEqual([]);
+    expect(params).toEqual([]);
+  });
+});
+
+describe('has_active_lead flag (parameter-free constant SQL)', () => {
+  it('renders an EXISTS on the CRM view keyed on status = Open, with no binds', () => {
+    const { where, params } = aq.buildFilters({ flags: ['has_active_lead'] });
+    expect(where.length).toBe(1);
+    expect(where[0]).toContain('exists (select 1 from');
+    expect(where[0]).toContain(aq.ST_CRM_LEADS);
+    expect(where[0]).toContain("status = 'Open'");
+    expect(where[0]).not.toContain('active');
+    expect(params).toEqual([]);
+  });
+  it('renders in display SQL', () => {
+    const sql = aq.buildDisplaySql({ flags: ['has_active_lead'] });
+    expect(sql).toContain("status = 'Open'");
+  });
 });
 
 describe('list membership: zips', () => {

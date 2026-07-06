@@ -14,10 +14,12 @@
  * strings (zip/segment) use the '' sentinel.
  */
 import {
+  CUSTOMER_JOURNEY,
   FLAGS,
   JOBS_TABLE,
   REGIONS,
   SEGMENT_COLUMNS,
+  ST_CRM_LEADS,
   TABLE,
   TRADES,
   asList,
@@ -77,6 +79,9 @@ interface SnapshotInit {
   flagMasks: Record<string, Uint8Array>;
   days: Float64Array;
   revenue: Float64Array;
+  // Unique blog posts viewed per customer; 0 (known, not unknown) for the vast majority
+  // with no journey rows — so `exclude: blogsMin N` keeps zero-blog customers.
+  blogs: Float64Array;
   zips: string[];
   segments: Record<string, string[]>;
   tagIndex: Map<string, Int32Array>;
@@ -92,6 +97,7 @@ export class Snapshot {
   readonly flagMasks: Record<string, Uint8Array>;
   readonly days: Float64Array;
   readonly revenue: Float64Array;
+  readonly blogs: Float64Array;
   readonly zips: string[];
   readonly segments: Record<string, string[]>;
   readonly tagIndex: Map<string, Int32Array>;
@@ -113,6 +119,7 @@ export class Snapshot {
     this.flagMasks = init.flagMasks;
     this.days = init.days;
     this.revenue = init.revenue;
+    this.blogs = init.blogs;
     this.zips = init.zips;
     this.segments = init.segments;
     this.tagIndex = init.tagIndex;
@@ -141,7 +148,11 @@ export class Snapshot {
   // ----------------------------------------------------------------- builders
   /** Build a snapshot from plain rows (no DB) — for tests. Mirrors from_warehouse:
    * opted-out customers (any do_not_* flag) are dropped up front. */
-  static fromRows(rawRows: Row[], tagRows: Row[] = []): Snapshot {
+  static fromRows(
+    rawRows: Row[],
+    tagRows: Row[] = [],
+    extras: { blogRows?: Row[]; activeLeadIds?: number[] } = {},
+  ): Snapshot {
     const optedOut = (r: Row) =>
       Boolean(r.do_not_mail) || Boolean(r.do_not_service) || Boolean(r.do_not_text);
     const suppressedCount = rawRows.filter(optedOut).length;
@@ -174,13 +185,17 @@ export class Snapshot {
       }
     });
 
+    const blogs = buildBlogs(n, idToRow, extras.blogRows ?? []);
+    const activeLeadMask = buildActiveLeadMask(n, idToRow, extras.activeLeadIds ?? []);
+
     return new Snapshot({
       customerId,
       tradeMasks: mapByName(TRADES, colsBool),
       regionMasks: mapByName(REGIONS, colsBool),
-      flagMasks: flagMasksFrom(colsBool),
+      flagMasks: { ...flagMasksFrom(colsBool), has_active_lead: activeLeadMask },
       days,
       revenue,
+      blogs,
       zips,
       segments: segmentsByGroup(segCols),
       tagIndex: buildTagIndex(tagRows, idToRow),
@@ -273,14 +288,18 @@ export class Snapshot {
       }
     });
 
+    // Big scans stay non-overlapping: tag index, then the two loader queries.
     const tagIndex = await loadTagIndex(idToRow);
+    const blogs = buildBlogs(n, idToRow, await loadBlogCounts());
+    const activeLeadMask = buildActiveLeadMask(n, idToRow, await loadActiveLeadIds());
     return new Snapshot({
       customerId,
       tradeMasks: mapByName(TRADES, colsBool),
       regionMasks: mapByName(REGIONS, colsBool),
-      flagMasks: flagMasksFrom(colsBool),
+      flagMasks: { ...flagMasksFrom(colsBool), has_active_lead: activeLeadMask },
       days,
       revenue,
+      blogs,
       zips,
       segments: segmentsByGroup(segCols),
       tagIndex,
@@ -348,6 +367,21 @@ export class Snapshot {
       const truth = new Uint8Array(n);
       for (let i = 0; i < n; i++) truth[i] = this._revKnown[i] && this.revenue[i] <= smax ? 1 : 0;
       out.push({ truth, known: this._revKnown });
+    }
+
+    // Blog engagement is known-zero for everyone (mirrors the SQL coalesce(...,0)), so
+    // `known` is all-true — no null-aware masking, unlike spend/recency above.
+    const bmin = num(fset.blogsMin);
+    const bmax = num(fset.blogsMax);
+    if (bmin !== null) {
+      const truth = new Uint8Array(n);
+      for (let i = 0; i < n; i++) truth[i] = this.blogs[i] >= bmin ? 1 : 0;
+      out.push({ truth, known: all });
+    }
+    if (bmax !== null) {
+      const truth = new Uint8Array(n);
+      for (let i = 0; i < n; i++) truth[i] = this.blogs[i] <= bmax ? 1 : 0;
+      out.push({ truth, known: all });
     }
 
     for (const gkey of Object.keys(SEGMENT_COLUMNS)) {
@@ -536,6 +570,33 @@ function flagMasksFrom(cols: Record<string, Uint8Array>): Record<string, Uint8Ar
   };
 }
 
+/** Per-customer blog-view counts (Float64Array, zeros default) filled from the loader
+ * rows via the id→row index. Ids not present in the snapshot are ignored. */
+function buildBlogs(n: number, idToRow: Map<number, number>, blogRows: Row[]): Float64Array {
+  const blogs = new Float64Array(n);
+  for (const r of blogRows) {
+    const row = idToRow.get(Number(r.customer_id));
+    if (row !== undefined) blogs[row] = Number(r.blogs) || 0;
+  }
+  return blogs;
+}
+
+/** Boolean mask (1/0) of customers with an open CRM lead, built from the id list. A flag
+ * in FLAGS without a mask makes matchMask throw, so this is constructed on every build
+ * path — an empty id list simply yields an all-zero mask. */
+function buildActiveLeadMask(
+  n: number,
+  idToRow: Map<number, number>,
+  activeLeadIds: number[],
+): Uint8Array {
+  const mask = new Uint8Array(n);
+  for (const id of activeLeadIds) {
+    const row = idToRow.get(Number(id));
+    if (row !== undefined) mask[row] = 1;
+  }
+  return mask;
+}
+
 function segmentsByGroup(segCols: Record<string, string[]>): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const [gkey, col] of Object.entries(SEGMENT_COLUMNS)) out[gkey] = segCols[col];
@@ -595,4 +656,37 @@ async function loadTagIndex(idToRow: Map<number, number>): Promise<Map<string, I
        group by 1, 2`,
   );
   return buildTagIndex(pairs, idToRow);
+}
+
+/** Per-customer blog-view totals from the journey table (only the ~hundreds of matched,
+ * non-spam customers with a view). The ::double precision cast matters: pg returns
+ * sum(bigint) as a string otherwise, and Number('12') is fine but the cast keeps it a
+ * numeric type end-to-end. */
+async function loadBlogCounts(): Promise<Row[]> {
+  return runQuery(
+    `select st_customer_id as customer_id,
+            sum(unique_blog_posts_viewed)::double precision as blogs
+       from ${CUSTOMER_JOURNEY}
+       where matched_to_st_customer and st_customer_id is not null
+         and is_spam is not true and is_duplicate is not true
+       group by 1
+       having sum(unique_blog_posts_viewed) > 0`,
+  );
+}
+
+/** customer_ids with at least one open ServiceTitan CRM lead. Graceful on failure: the
+ * staging view is the least-guaranteed dependency, so a missing view logs and yields no
+ * ids (the flag count is then 0 and exclude is fail-open) rather than failing the load. */
+async function loadActiveLeadIds(): Promise<number[]> {
+  try {
+    const rows = await runQuery(
+      `select distinct customer_id::bigint as customer_id
+         from ${ST_CRM_LEADS}
+         where status = 'Open' and customer_id is not null`,
+    );
+    return rows.map((r) => Number(r.customer_id));
+  } catch (e) {
+    console.error('loadActiveLeadIds failed; active-lead flag will be empty', e);
+    return [];
+  }
 }

@@ -37,6 +37,7 @@ export const FALLBACK_FLAGS = [
   { f: 'has_email', label: 'Has email' },
   { f: 'has_mobile', label: 'Has mobile' },
   { f: 'is_repeat_customer', label: 'Repeat customer' },
+  { f: 'has_active_lead', label: 'Active lead' },
 ];
 export const FALLBACK_SEGMENT_GROUPS = [
   { key: 'revenueSegments', label: 'Lifetime revenue tier' },

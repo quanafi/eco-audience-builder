@@ -176,7 +176,7 @@ input.fin:focus{outline:none;border-color:var(--cyan)}
 
 /* card / tabs / table */
 .card{overflow:hidden}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);padding:0 20px}
+.tabs{display:flex;flex-wrap:wrap;row-gap:4px;gap:4px;border-bottom:1px solid var(--line);padding:0 20px}
 .tab{background:none;border:none;padding:14px 14px 12px;font-weight:var(--fw-bold);font-size:var(--text-caption);letter-spacing:var(--tracking-title);
   text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;
   color:var(--g500);font-family:inherit}
@@ -188,6 +188,9 @@ input.fin:focus{outline:none;border-color:var(--cyan)}
   display:flex;align-items:center;gap:8px}
 .table-scroll{max-height:472px;overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:var(--text-sm)}
+/* On phones table{width:100%} crushes the 7 columns; a min-width restores horizontal
+   scroll inside .table-scroll (which already has overflow:auto). */
+.table-scroll table{min-width:640px}
 th{text-align:left;font-size:var(--text-micro);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--g500);
   padding:11px 14px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:#fff;font-weight:var(--fw-bold);z-index:1}
 th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -206,6 +209,10 @@ a.cust-link{display:inline-block;text-decoration:none;cursor:pointer;transition:
 a.cust-link:hover{color:var(--blue);text-decoration:underline}
 .tag{display:inline-block;font-size:var(--text-micro);font-weight:var(--fw-bold);padding:2px 8px;border-radius:6px;background:var(--g100);color:var(--g700)}
 .tag-eco{background:rgba(132,189,0,.18);color:#4d6b00}
+.trade-tags{display:flex;flex-wrap:wrap;gap:4px}
+/* Prospect = customer with no completed jobs (no trade). Muted, dashed variant so it
+   reads as an absence-of-trade rather than a trade of its own, in both themes. */
+.tag-prospect{background:transparent;color:var(--g500);border:1px dashed var(--line2);font-style:italic}
 .flags{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 
 .empty{padding:64px 20px;text-align:center;color:var(--g500)}
@@ -244,7 +251,7 @@ pre.sql .pl{color:#dce6f0}
 .mode-hint{margin:9px 20px 0;font-size:var(--text-caption);color:var(--g500)}
 
 /* card actions (saved / tag / export / send to ads) */
-.card-actions{margin-left:auto;display:flex;align-items:center;gap:9px}
+.card-actions{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;row-gap:8px;align-items:center;gap:9px}
 .save-wrap,.tagst-wrap,.ads-wrap{position:relative;display:flex;align-items:center}
 
 /* save current + saved list (reuses .export-panel) */
@@ -266,7 +273,7 @@ pre.sql .pl{color:#dce6f0}
   text-transform:uppercase;padding:7px 14px;border-radius:9px;border:1px solid var(--line2);background:#fff;
   color:var(--g700);cursor:pointer;font-family:inherit;transition:all .12s}
 .btn-export:hover{border-color:var(--cyan);color:var(--navy)}
-.export-panel{position:fixed;width:320px;z-index:40;background:#fff;
+.export-panel{position:fixed;width:min(320px,calc(100vw - 32px));max-height:calc(100dvh - 24px);overflow:auto;z-index:40;background:#fff;
   border:1px solid var(--line);border-radius:14px;padding:16px;
   box-shadow:0 8px 18px rgba(15,23,33,.10),0 24px 48px -24px rgba(15,23,33,.4)}
 .export-head{font-family:var(--font-work-sans);font-weight:var(--fw-bold);font-size:var(--text-sm);letter-spacing:var(--tracking-title);

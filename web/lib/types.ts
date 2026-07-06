@@ -13,6 +13,8 @@ export interface FilterSet {
   zips?: string | string[];
   spendMin?: number | string | null;
   spendMax?: number | string | null;
+  blogsMin?: number | string | null;
+  blogsMax?: number | string | null;
   revenueSegments?: string[];
   frequencySegments?: string[];
   recencySegments?: string[];
@@ -33,7 +35,9 @@ export interface PreviewRow {
   city: string;
   zip: string;
   state: string;
-  primary_trade: string;
+  /** Trades the customer has ever completed a job in (TRADES key order). Empty = a
+   * prospect with no completed jobs — rendered as a distinct "Prospect" pill. */
+  trades: string[];
   lifetime_jobs: number;
   lifetime_revenue: number;
   last_completed_job: string | null;

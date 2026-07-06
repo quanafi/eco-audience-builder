@@ -63,6 +63,18 @@ describe('audiences store', () => {
     expect(after.some((a) => a.id === result.id)).toBe(true);
   });
 
+  it('persists blogs bounds and the active-lead flag in saved filters', () => {
+    const result = saveAudience('Blog readers', {
+      blogsMin: 1,
+      blogsMax: 10,
+      flags: ['has_active_lead'],
+      mode: 'include',
+    });
+    expect(result.audience.filters.blogsMin).toBe(1);
+    expect(result.audience.filters.blogsMax).toBe(10);
+    expect(result.audience.filters.flags).toEqual(['has_active_lead']);
+  });
+
   it('defaults a blank name to "Untitled audience"', () => {
     expect(saveAudience('  ', {}).audience.name).toBe('Untitled audience');
     expect(saveAudience('', {}).audience.name).toBe('Untitled audience');

@@ -6,6 +6,7 @@ import { RegionsSection } from './RegionsSection';
 import { RecencySection } from './RecencySection';
 import { ZipSection } from './ZipSection';
 import { SpendSection } from './SpendSection';
+import { BlogsSection } from './BlogsSection';
 import type { FilterSectionProps } from '../contracts';
 import { emptySet } from '../../lib/editableSet';
 import type { Config, Facets, FacetCounts } from '../../lib/types';
@@ -148,5 +149,30 @@ describe('SpendSection', () => {
     const next = onChange.mock.calls[0][0];
     expect(next.spendMin).toBe(250);
     expect(next.spendPreset).toBeNull();
+  });
+});
+
+describe('BlogsSection', () => {
+  it('commits the typed blogsMin on blur', () => {
+    const onChange = vi.fn();
+    render(<BlogsSection {...makeProps({ onChange })} />);
+    expand(/Blog engagement/);
+
+    const input = screen.getByLabelText('Minimum blog posts read');
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.blur(input);
+    const next = onChange.mock.calls[0][0];
+    expect(next.blogsMin).toBe(3);
+  });
+
+  it('does not fire onChange when the value is unchanged', () => {
+    const onChange = vi.fn();
+    const set = { ...emptySet(), blogsMin: 3 };
+    render(<BlogsSection {...makeProps({ onChange, set })} />);
+    expand(/Blog engagement/);
+
+    const input = screen.getByLabelText('Minimum blog posts read');
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

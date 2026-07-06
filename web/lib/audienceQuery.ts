@@ -17,6 +17,14 @@ export const TABLE = 'edw2.customers';
 // One row per (job, ...) with a comma-separated `tags` column; joined back to
 // customers by customer_id to filter on job tags.
 export const JOBS_TABLE = 'edw2.jobs';
+// WhatConverts customer-journey table (one row per website lead), linked to customers
+// via st_customer_id (a bigint matching customers.customer_id — no cast). Source of the
+// per-customer blog-engagement count. Only a small set of customers have any journey row.
+export const CUSTOMER_JOURNEY = 'edw2.customer_journey';
+// ServiceTitan CRM leads staging view (one row per CRM lead). Active-lead detection keys
+// on status = 'Open' — NEVER the `active` boolean, which is a soft-delete flag that is
+// TRUE on every row.
+export const ST_CRM_LEADS = 'edw2.stg_servicetitan_api__crm_leads_data';
 
 // Allow-listed filter vocabularies — used both to validate input and to render the
 // inline (display) SQL safely; anything outside these sets is rejected.
@@ -38,6 +46,9 @@ export const FLAGS: Record<string, string> = {
   has_mobile: "(phone_number is not null and phone_number <> '')",
   is_member: 'is_member = 1',
   is_repeat_customer: 'is_repeat_customer = 1',
+  // A customer with at least one open ServiceTitan CRM lead. Parameter-free constant SQL
+  // per the FLAGS contract. status = 'Open' is the only correct predicate here.
+  has_active_lead: `exists (select 1 from ${ST_CRM_LEADS} l where l.customer_id::bigint = ${TABLE}.customer_id and l.status = 'Open')`,
 };
 // Human-readable labels for the flags (served via /api/config). Order = display order.
 export const FLAG_LABELS: Record<string, string> = {
@@ -45,6 +56,7 @@ export const FLAG_LABELS: Record<string, string> = {
   has_email: 'Has email',
   has_mobile: 'Has mobile',
   is_repeat_customer: 'Repeat customer',
+  has_active_lead: 'Active lead',
 };
 // "Do not contact" suppressions: an always-on baseline exclusion, gated to columns
 // that actually exist in the live mart (snapshot.availableSuppress). A customer is
@@ -78,6 +90,14 @@ export const PRIMARY_TRADE_EXPR = `case
         else 'Electric'
     end`;
 
+// Unique blog posts a customer viewed, summed across their matched, non-spam,
+// non-duplicate journey rows; 0 (not NULL) when the customer has no journey rows — so
+// `exclude: blogsMin N` correctly keeps zero-blog customers (see snapshot.ts).
+export const BLOGS_EXPR =
+  `coalesce((select sum(cj.unique_blog_posts_viewed) from ${CUSTOMER_JOURNEY} cj ` +
+  `where cj.st_customer_id = ${TABLE}.customer_id and cj.matched_to_st_customer ` +
+  `and cj.is_spam is not true and cj.is_duplicate is not true), 0)`;
+
 export const ROW_LIMIT = 200;
 
 /**
@@ -93,7 +113,9 @@ export const PREVIEW_SELECT_LIST = `customer_id,
     ${CITY_EXPR}            as city,
     ${ZIP_EXPR}             as zip,
     ${STATE_EXPR}           as state,
-    ${PRIMARY_TRADE_EXPR}   as primary_trade,
+    coalesce(plumbing_customer, 0) as plumbing_customer,
+    coalesce(hvac_customer, 0)     as hvac_customer,
+    coalesce(electric_customer, 0) as electric_customer,
     lifetime_jobs,
     lifetime_revenue,
     last_completed_job,
@@ -243,6 +265,11 @@ export function filterClauses(fset: FilterSet, render: Renderer): string[] {
   if (smin !== null) where.push(render.compare('lifetime_revenue', '>=', smin));
   if (smax !== null) where.push(render.compare('lifetime_revenue', '<=', smax));
 
+  const bmin = num(fset.blogsMin);
+  const bmax = num(fset.blogsMax);
+  if (bmin !== null) where.push(render.compare(BLOGS_EXPR, '>=', bmin));
+  if (bmax !== null) where.push(render.compare(BLOGS_EXPR, '<=', bmax));
+
   for (const [key, col] of Object.entries(SEGMENT_COLUMNS)) {
     const vals = asList(seg[key]);
     if (vals.length) where.push(render.membership(col, vals.map((v) => String(v))));
@@ -334,11 +361,11 @@ export function presentRow(r: Row): PreviewRow {
     city: str(r.city),
     zip: (r.zip as string) || '',
     state: str(r.state),
-    primary_trade: (r.primary_trade as string) || '—',
     lifetime_jobs: Math.trunc(Number(r.lifetime_jobs) || 0),
     lifetime_revenue: Number(r.lifetime_revenue) || 0,
     last_completed_job: lastIso,
     days_since_last_job: r.days_since_last_job == null ? null : Number(r.days_since_last_job),
+    trades: Object.keys(TRADES).filter((t) => Number(r[TRADES[t]]) > 0),
     segment: (r.lifetime_revenue_segment as string) || '',
     is_member: Boolean(r.is_member),
     has_email: Boolean(r.has_email),

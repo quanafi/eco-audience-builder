@@ -22,6 +22,7 @@ import { RecencySection } from './sections/RecencySection';
 import { RegionsSection } from './sections/RegionsSection';
 import { ZipSection } from './sections/ZipSection';
 import { SpendSection } from './sections/SpendSection';
+import { BlogsSection } from './sections/BlogsSection';
 import { SegmentsSection } from './sections/SegmentsSection';
 import { TagsSection } from './sections/TagsSection';
 import { FlagsSection } from './sections/FlagsSection';
@@ -225,6 +226,7 @@ export function AudienceBuilder() {
                   <RegionsSection {...sectionProps} />
                   <ZipSection {...sectionProps} />
                   <SpendSection {...sectionProps} />
+                  <BlogsSection {...sectionProps} />
                   <SegmentsSection {...sectionProps} />
                   <TagsSection {...sectionProps} />
                 </>

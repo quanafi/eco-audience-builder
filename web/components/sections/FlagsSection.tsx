@@ -21,7 +21,7 @@ export function FlagsSection({ set, facetCounts, config, onChange }: FilterSecti
 
   return (
     <Section
-      label="Reachability"
+      label="Reachability & status"
       icon={<CheckCheck size={14} />}
       iconLime
       activeCount={sectionActiveCount('flags', set)}

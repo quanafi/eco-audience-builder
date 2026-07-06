@@ -19,6 +19,8 @@ export interface EditableSet {
   spendMin: number | null;
   spendMax: number | null;
   spendPreset: string | null;
+  blogsMin: number | null;
+  blogsMax: number | null;
   revenueSegments: string[];
   frequencySegments: string[];
   recencySegments: string[];
@@ -31,6 +33,7 @@ export function emptySet(): EditableSet {
     trades: [], regions: [],
     recency: 'any', recMin: null, recMax: null,
     zips: '', spendMin: null, spendMax: null, spendPreset: null,
+    blogsMin: null, blogsMax: null,
     revenueSegments: [], frequencySegments: [], recencySegments: [],
     flags: [], tags: [],
   };
@@ -56,6 +59,8 @@ export function setPayload(s: EditableSet): FilterSet {
     zips: s.zips,
     spendMin: s.spendMin,
     spendMax: s.spendMax,
+    blogsMin: s.blogsMin,
+    blogsMax: s.blogsMax,
     revenueSegments: s.revenueSegments,
     frequencySegments: s.frequencySegments,
     recencySegments: s.recencySegments,
@@ -101,6 +106,8 @@ export function setFromPayload(p: FilterSet = {}): EditableSet {
     spendMin,
     spendMax,
     spendPreset: spendPresetFromMinMax(spendMin, spendMax),
+    blogsMin: (p.blogsMin ?? null) as number | null,
+    blogsMax: (p.blogsMax ?? null) as number | null,
     revenueSegments: [...(p.revenueSegments ?? [])],
     frequencySegments: [...(p.frequencySegments ?? [])],
     recencySegments: [...(p.recencySegments ?? [])],
@@ -122,6 +129,8 @@ export function sectionActiveCount(key: string, s: EditableSet): number {
       return s.zips.split(/[\s,]+/).some((z) => /^\d{5}$/.test(z.trim())) ? 1 : 0;
     case 'spend':
       return s.spendMin != null || s.spendMax != null ? 1 : 0;
+    case 'blogs':
+      return s.blogsMin != null || s.blogsMax != null ? 1 : 0;
     case 'segments':
       return s.revenueSegments.length + s.frequencySegments.length + s.recencySegments.length;
     case 'tags':
@@ -146,6 +155,7 @@ export function setActiveCount(s: EditableSet): number {
     s.recencySegments.length +
     (s.recency !== 'any' ? 1 : 0) +
     (zl.length ? 1 : 0) +
-    (s.spendMin != null || s.spendMax != null ? 1 : 0)
+    (s.spendMin != null || s.spendMax != null ? 1 : 0) +
+    (s.blogsMin != null || s.blogsMax != null ? 1 : 0)
   );
 }

@@ -41,7 +41,13 @@ function snap(): Snapshot {
     { customer_id: 4, tag: 'VIP' },
     { customer_id: 4, tag: 'Install' },
   ];
-  return Snapshot.fromRows(rows, tags);
+  // Blog counts: only customers 2 and 4 have any views; 1 and 3 are known-zero.
+  const blogRows: Row[] = [
+    { customer_id: 2, blogs: 5 },
+    { customer_id: 4, blogs: 3 },
+  ];
+  // Only customer 1 has an open CRM lead.
+  return Snapshot.fromRows(rows, tags, { blogRows, activeLeadIds: [1] });
 }
 
 function ids(s: Snapshot, payload: FilterPayload): number[] {
@@ -74,6 +80,12 @@ const CASES: Case[] = [
   { name: 'segments', payload: { revenueSegments: ['High'] }, expected: [1, 4], sql: ["lifetime_revenue_segment in ('High')"] },
   { name: 'flag_email', payload: { flags: ['has_email'] }, expected: [1, 4], sql: ["(email is not null and email <> '')"] },
   { name: 'flag_member', payload: { flags: ['is_member'] }, expected: [1, 4], sql: ['is_member = 1'] },
+  { name: 'blogs_min', payload: { blogsMin: 3 }, expected: [2, 4], sql: ['unique_blog_posts_viewed', '>= 3'] },
+  { name: 'blogs_max', payload: { blogsMax: 3 }, expected: [1, 3, 4], sql: ['unique_blog_posts_viewed', '<= 3'] },
+  // Acceptance: excluding "read >= 3" must KEEP the known-zero-blog customers (1, 3).
+  { name: 'exclude_blogs', payload: { exclude: { blogsMin: 3 } }, expected: [1, 3], sql: ['not', 'unique_blog_posts_viewed'] },
+  { name: 'flag_active_lead', payload: { flags: ['has_active_lead'] }, expected: [1], sql: ['exists', "status = 'open'"] },
+  { name: 'exclude_active_lead', payload: { exclude: { flags: ['has_active_lead'] } }, expected: [2, 3, 4], sql: ['not', "status = 'open'"] },
   { name: 'tags', payload: { tags: ['VIP'] }, expected: [1, 4], sql: ['exists', "'VIP'"] },
   { name: 'exclude_trade', payload: { exclude: { trades: ['HVAC'] } }, expected: [1, 3], sql: ['not ((hvac_customer = 1))'] },
   { name: 'include_and_exclude', payload: { trades: ['Plumbing'], exclude: { tags: ['VIP'] } }, expected: [], sql: ['plumbing_customer = 1'] },

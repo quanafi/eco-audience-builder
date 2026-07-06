@@ -40,7 +40,12 @@ export function Dropdown({ label, icon, onOpen, children }: DropdownProps) {
       const el = wrapRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+      // Clamp the right-anchored offset so a trigger that has wrapped near the left edge
+      // (on narrow/phone widths) can't push the fixed panel off-screen. `w` matches the
+      // panel's responsive width (min(320, viewport - 32)).
+      const w = Math.min(320, window.innerWidth - 32);
+      const right = Math.max(8, Math.min(window.innerWidth - r.right, window.innerWidth - w - 8));
+      setPos({ top: r.bottom + 8, right });
     };
     place();
     // Move focus into the panel on open: the first focusable control, falling back
